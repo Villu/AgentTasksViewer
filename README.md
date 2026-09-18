@@ -138,6 +138,85 @@ duplication, and it is the kind that drifts. It is called out at the top of
 shared implementation would mean a library, a version and an install story, for
 about forty lines of awk. Stated rather than hidden.
 
+## The workflow these came from
+
+The tools assume an arrangement, and are more useful inside it. One **coordinator**
+in the main checkout, which claims no tasks and writes no feature code; one or more
+**workers**, each in its own git worktree on its own branch. The coordinator assigns,
+reviews every PR against the task's `**Acceptance**` before merging, and keeps the
+queue and the protocol document current. Workers build, push back when the
+coordinator is wrong, and report findings into the queue rather than into chat.
+
+Claiming is `(@actor)` on the checkbox line, committed alone and pushed before the
+work starts. Finishing is removing the whole block — history lives in `git log`, not
+in a checked box, and a dependency counts as unmet while its id is still in the file.
+
+**The `Acceptance` field is where the value is.** Not "implement X" but the
+condition that would falsify it: *a test drives the composed path rather than
+calling the unit*, *a failed or skipped cycle does not ping*, *a named test fails if
+this guarantee is removed*. Clauses written that way are what make an agent find the
+real problem instead of the obvious one, and they are worth more effort than the
+description.
+
+## Gotchas
+
+Each of these cost somebody real time. They are why the tools check what they check.
+
+**"Nobody else owns this file" means the whole file.** A file with no live claim can
+still be listed by a task nobody has picked up, and the collision arrives when
+somebody does — the worst possible moment. This is rule 3, and it is the single most
+useful thing here.
+
+**A merge invalidates tasks nobody is holding.** Nobody is watching an unclaimed
+task, so its description quietly stops being true: a prerequisite that has since
+landed, a mechanism described as present that was just removed. Re-read the blocks a
+merge touched, not only the one you merged.
+
+**A `Blocked` line outlives its cause.** The thing that unblocks it happens
+elsewhere — a credential arrives, a date passes — and nothing prompts anyone to go
+back. Sweep them periodically; two of ours had been resolved for hours while the
+file still advertised them as blocked.
+
+**An acceptance that demands a test, over a `Files` list naming no test file, is
+unsatisfiable.** Three separate agents each hit this, created a test file, and then
+asked whether they had overstepped. If a clause says "a named test", name the test
+file.
+
+**A guarantee nothing invokes is worse than no guarantee.** It is written, tested,
+visible, and stops nothing — and unlike an absent check it answers "is this handled?"
+with yes. Ask what calls it. The mirror costs more: a guard that fires on everything
+*except* its target, which is what a check placed before the filter meant to scope it
+does.
+
+**A surviving mutation is a question, not a pass.** It may survive because the code
+is right, because no input reaches it, or because the component swallowed the
+exception and "nothing changed" held for the wrong reason. All three look identical
+from outside.
+
+**Two paths that share their core computation cannot check that computation.**
+Rebuild-versus-incremental comparisons are the usual case: if both sides run the same
+fold, a bug in the fold agrees with itself. Persistence in the middle does not help.
+
+**A check can be vacuously true**, which is worse than no check because it prints
+something reassuring. Ask what would have to be true for it to fail; if you cannot
+construct that case, it is decoration.
+
+**One measurement, one set, quoted once.** A figure repeated in three places is three
+figures the moment anything changes, and the copy that drifts is whichever one you
+are not currently editing.
+
+**Status words lie in both directions.** We saw one tool report `lost` for a write
+that was safely stored and for one that had been destroyed, and `missing` for a task
+that never existed and for one already finished. When a status word is your evidence,
+go and read the state it claims to describe.
+
+**Clear context on a trigger, not on a feeling.** "Wait for a clean boundary" is how
+a session reaches 96% and gets compacted mid-turn with the summary chosen for it.
+Before clearing, rewrite the status note rather than appending to it, prefer telling
+the next reader *what to re-derive* over a number that will be stale, and re-read it
+as someone who has not had the conversation.
+
 ## Licence
+
 
 MIT. See [LICENSE](LICENSE).
