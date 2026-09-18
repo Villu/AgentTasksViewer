@@ -172,7 +172,19 @@ collect_closed() {
   # metacharacter in somebody's convention should not become a silent filter.
   # --grep only narrows — it matches anywhere in the message, so the prefix is
   # then checked against the subject itself below.
-  if ! raw="$(git log "$rev" -F --grep="$CLOSED_MATCH" \
+  #
+  # --full-history is not a refinement, it is the difference between right and
+  # wrong here. `git log -- <path>` simplifies history by default: at a merge it
+  # follows one parent and prunes the other, so a close commit that arrived on a
+  # branch and landed in a merge is dropped from the output entirely. A repository
+  # that merges pull requests — which is most of them, and is exactly how the
+  # consumer this was built for works — would get a section quietly missing its
+  # branch-side closes, and a total that agreed with the omission.
+  #
+  # Merges themselves are kept rather than --no-merges'd: a squash or a merge
+  # whose subject carries the convention is a real close, and "Merge pull
+  # request..." does not start with the prefix, so nothing is double-counted.
+  if ! raw="$(git log "$rev" --full-history -F --grep="$CLOSED_MATCH" \
                 --format='%h%x09%cs%x09%s' -- "$FILE" 2>/dev/null)"; then
     CLOSED_WHY="git log could not read the history of $FILE"; return 0
   fi

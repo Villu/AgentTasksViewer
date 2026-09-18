@@ -239,8 +239,14 @@ tasks-board --closed-match "Done "         # a different commit convention
 ```
 
 It reads commits that touch the task file whose subject starts with the prefix,
-and shows the id, the text, the date and the sha. `--ref` applies here too: with
-it the section is the history of that ref.
+and shows the id, the text, the date and the sha, newest first. `--ref` applies
+here too: with it the section is the history of that ref.
+
+Closes that arrived on a branch and landed in a merge are included. That needs
+`--full-history`, because `git log -- <path>` prunes one side of a merge by
+default — so in any repository that merges pull requests, the obvious version of
+this command silently omits the branch-side closes *and* reports a total that
+agrees with the omission.
 
 **It is off unless you ask for it, and that is the point.** `Close <id>:` is a
 convention some repositories have and this tool does not own. A board that assumed

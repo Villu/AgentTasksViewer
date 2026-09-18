@@ -172,6 +172,20 @@ and then re-checked against the *subject* in awk, because `--grep` matches
 anywhere in the message. Rows are split by hand on the first two tabs rather than
 with `split()`, since a subject may contain one.
 
+**`--full-history` is load-bearing — do not drop it as noise.** `git log -- <path>`
+simplifies history by default: at a merge it follows one parent and prunes the
+other, so a close that arrived on a branch and landed in a merge disappears from
+the output. Any repo that merges pull requests loses its branch-side closes, and
+the total is computed from the same list so it agrees with the omission — a
+wrong answer that looks self-consistent. Shipped without it for one commit;
+caught by a fixture with a merge, not by reading.
+
+Ordering is `git log`'s default, which is reverse chronological by **commit**
+date, and the row shows `%cs`, which is also the commit date — sort key and
+displayed value are the same field on purpose. Do not add a client-side sort:
+it would be a second implementation of an ordering the log already has, and the
+two would drift the moment one of them learned about author dates.
+
 Closed rows are `div.card.closed`, not `<details>` — there is nothing to expand,
 and a card that opens to nothing is worse than a row. The storage script only
 looks at `details.card`, so they are skipped by it automatically.
