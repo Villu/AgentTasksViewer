@@ -244,9 +244,15 @@ here too: with it the section is the history of that ref.
 
 Closes that arrived on a branch and landed in a merge are included. That needs
 `--full-history`, because `git log -- <path>` prunes one side of a merge by
-default — so in any repository that merges pull requests, the obvious version of
-this command silently omits the branch-side closes *and* reports a total that
+default, silently omitting the branch-side closes *and* reporting a total that
 agrees with the omission.
+
+It only bites where the history actually contains merge commits. A repository
+that rebases or squashes its pull requests has a linear `main` and was never
+affected — which is most of them, and is worth knowing before you go looking for
+missing rows. The flag is there because linearity is usually a convention rather
+than a property: one merge made the other way and closes start disappearing, with
+a count that agrees.
 
 **It is off unless you ask for it, and that is the point.** `Close <id>:` is a
 convention some repositories have and this tool does not own. A board that assumed

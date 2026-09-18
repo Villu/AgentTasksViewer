@@ -175,10 +175,17 @@ with `split()`, since a subject may contain one.
 **`--full-history` is load-bearing — do not drop it as noise.** `git log -- <path>`
 simplifies history by default: at a merge it follows one parent and prunes the
 other, so a close that arrived on a branch and landed in a merge disappears from
-the output. Any repo that merges pull requests loses its branch-side closes, and
-the total is computed from the same list so it agrees with the omission — a
-wrong answer that looks self-consistent. Shipped without it for one commit;
-caught by a fixture with a merge, not by reading.
+the output. The total is computed from the same list, so it agrees with the
+omission — a wrong answer that looks self-consistent. Shipped without it for one
+commit; caught by a fixture with a merge, not by reading.
+
+Its reach is narrower than it first looks, and the distinction is worth keeping
+straight: it fires only where the history *contains merge commits*. A repo that
+rebases or squashes its PRs has a linear `main` and is immune, however much
+merging it does — trader is one, which I got wrong when I first described this.
+The flag earns its place anyway, because that linearity is a convention somebody
+wrote down rather than a property of the repository: it protects against the rule
+changing, not against today.
 
 Ordering is `git log`'s default, which is reverse chronological by **commit**
 date, and the row shows `%cs`, which is also the commit date — sort key and
