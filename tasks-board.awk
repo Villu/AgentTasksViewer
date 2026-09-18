@@ -7,6 +7,9 @@
 # would drift, so if you change one, change the other in the same commit.
 #
 # -v heading=TEXT heading on the page (title is already the per-task array).
+# -v label=TEXT   how to invoke this tool, for the footer. A vendored copy is
+#                 reached by another name, and a footer naming a command the
+#                 reader does not have is worse than no footer.
 # -v refresh=N    how often the page re-checks the stamp, for --watch/--serve.
 #                 0 means a one-shot render, which says "snapshot" and claims
 #                 nothing about being current.
@@ -202,7 +205,7 @@ END {
         }
     }
 
-    print "<footer>Regenerate with <code>tasks-board</code>, or watch with <code>tasks-board --watch</code>. Nothing here is editable &mdash; change the task file.</footer>"
+    printf "<footer>Regenerate with <code>%s</code>, or keep it current with <code>%s --serve</code>. Nothing here is editable &mdash; change the task file.</footer>\n", label, label
     print "</div>"
     # Survive the meta refresh: keep which cards are open and where the page was.
     # Wrapped because sessionStorage throws in some contexts, and the board has

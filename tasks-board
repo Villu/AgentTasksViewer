@@ -12,6 +12,7 @@
 #     --file PATH       task file to read      (default: ./TASKS.md, or $TASKS_FILE)
 #     --out PATH        html to write          (default: ./tasks-board.html)
 #     --title TEXT      heading on the page    (default: the directory name)
+#     --label TEXT      how the footer says to invoke this (default: tasks-board)
 #     --watch [SECONDS] re-render whenever the file changes (default: 5)
 #     --serve [PORT]    --watch, and serve the board over http so it can actually
 #                       refresh itself (default: 8787). Needs python3.
@@ -31,6 +32,7 @@ AWK="$HERE/tasks-board.awk"
 FILE="${TASKS_FILE:-TASKS.md}"
 OUT="tasks-board.html"
 TITLE=""
+LABEL="tasks-board"
 WATCH=0
 SERVE=0
 EVERY=5
@@ -41,6 +43,7 @@ while [ $# -gt 0 ]; do
     --file)  FILE="${2:?--file needs a path}"; shift 2 ;;
     --out)   OUT="${2:?--out needs a path}"; shift 2 ;;
     --title) TITLE="${2:?--title needs text}"; shift 2 ;;
+    --label) LABEL="${2:?--label needs text}"; shift 2 ;;
     --watch) WATCH=1
              case "${2:-}" in ''|--*) shift ;; *) EVERY="$2"; shift 2 ;; esac ;;
     --serve) WATCH=1; SERVE=1
@@ -68,6 +71,7 @@ render() {
   local ts; ts="$(date -u +%s)"
   awk -v generated="$(date -u '+%Y-%m-%d %H:%M:%S UTC')" \
       -v heading="$TITLE" \
+      -v label="$LABEL" \
       -v refresh="$1" \
       -v epoch="$ts" \
       -v stamp="$(basename "$STAMP")" \
