@@ -7,6 +7,10 @@
 # would drift, so if you change one, change the other in the same commit.
 #
 # -v heading=TEXT heading on the page (title is already the per-task array).
+# -v source=TEXT  what this render was made from, shown on the page. "the task
+#                 file" for a working copy, "origin/main:TASKS.md" for a ref. A
+#                 board of someone else's branch that looks like your checkout is
+#                 the whole reason this is displayed rather than assumed.
 # -v label=TEXT   how to invoke this tool, for the footer. A vendored copy is
 #                 reached by another name, and a footer naming a command the
 #                 reader does not have is worse than no footer.
@@ -165,7 +169,7 @@ END {
         printf " &middot; <span class=\"live\" id=\"freshness\">checking every %ds</span>", refresh
     else
         printf " &middot; <span class=\"snap\" id=\"freshness\">snapshot</span>"
-    print " &middot; a view of the task file, which is the only source of truth</div>"
+    printf " &middot; a view of %s, which is the only source of truth</div>\n", esc(source)
 
     print "<div class=\"stats\">"
     printf "<div class=\"stat\"><b style=\"color:var(--ready)\">%d</b><span>ready</span></div>\n", cnt["ready"] + 0

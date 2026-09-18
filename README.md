@@ -55,12 +55,32 @@ tasks-board --serve              # re-render on change AND serve it, so it stays
 tasks-board --serve 9000         # the same on a port you choose (default 8787)
 tasks-board --watch              # re-render on change without serving (see the warning below)
 tasks-board --serve 8787 --out docs/board.html --title "Platform queue"
+tasks-board --serve --ref origin/main    # render the queue as the remote has it
 ```
 
 Then open the URL `--serve` prints — `http://127.0.0.1:8787/tasks-board.html`.
 Leave the tab open and it reloads itself whenever the task file changes.
 
 Both default to `./TASKS.md`, overridable with `--file` or `$TASKS_FILE`.
+
+**Use `--ref` when more than one machine writes the queue.** Without it the board
+renders *your working copy*, so a claim somebody else pushed is invisible until you
+pull — and nothing on the page can tell you: it correctly reports that it matches
+the render it was given, while that render is of a stale file. It is the same
+mistake as the banner below, one level further out, and it is the more dangerous
+one, because a coordinator assigns work from what the board shows.
+
+```bash
+tasks-board --serve --ref origin/main            # track what the fleet sees
+tasks-board --serve --ref origin/main --file docs/TASKS.md
+```
+
+With `--ref`, `--file` is a path inside the repository rather than on disk, a
+remote ref is fetched before every check, and change detection is the file's blob
+sha instead of an mtime. The page then names what it rendered — *a view of
+`origin/main:TASKS.md`* — so a board of somebody else's branch cannot be mistaken
+for your own checkout. Without `--ref` nothing changes: it reads the working copy
+and says *a view of the task file*.
 
 **Prefer `--serve` over `--watch`.** A board opened as a `file://` URL cannot read
 the stamp written beside it, so it cannot tell whether it is still the current
