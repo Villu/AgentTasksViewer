@@ -48,9 +48,17 @@
   - **Note**: Shares `src/auth/session.py` with `session-persistence`, so only one of the two can be held at a time. `tasks-ready` will say so.
   - **Tags**: auth
 
+- [x] Config was read from env vars in eleven places (@sam)
+  - **ID**: config-loader
+  - **Details**: One loader, validated once at startup, so a missing key fails the process instead of surfacing as `None` three hours later.
+  - **Files**: `src/config.py`, `tests/test_config.py`
+  - **Acceptance**: A missing required key refuses at startup and names the key; no module reads `os.environ` outside the loader, asserted by a test that greps the tree.
+  - **Tags**: config
+
 - [ ] Health check reports healthy while the queue is stalled
   - **ID**: healthcheck-liveness
   - **Details**: `/health` returns 200 if the process is up. It has never once gone red, including the afternoon the consumer was wedged and the queue grew to 40k.
   - **Files**: `src/http/health.py`, `tests/test_health.py`
+  - **Blocked by**: config-loader
   - **Acceptance**: The check asks whether the queue is draining rather than whether the process exists; a stalled consumer turns it red and a test proves it by stalling one; a **skipped** cycle is distinct from a failed one, because "not started yet" and "stopped working" want different answers.
   - **Tags**: ops, reliability

@@ -1,10 +1,17 @@
                                                                         # -*- awk -*-
 # Reads a markdown task file, writes an HTML board. Called by tasks-board.
 #
-# The four states are the same ones tasks-ready computes, deliberately: a task
-# is ready only when nobody holds it, nothing blocks it, and no path in its
+# The four live states are the same ones tasks-ready computes, deliberately: a
+# task is ready only when nobody holds it, nothing blocks it, and no path in its
 # Files is held by a task somebody has claimed. Two implementations of that rule
 # would drift, so if you change one, change the other in the same commit.
+#
+# A fifth state, done, is a `- [x]` checkbox. It is rendered at the bottom and
+# left out of the counts and the bars, because a board is for deciding what to do
+# next and a finished task is not a candidate. It also drops out of the two rules
+# that read other tasks: a done task holds none of its Files, and a **Blocked by**
+# naming it is satisfied. Both have to be true or marking a task done would be
+# worse than deleting it — it would go on blocking its dependents silently.
 #
 # -v heading=TEXT heading on the page (title is already the per-task array).
 # -v source=TEXT  what this render was made from, shown on the page. "the task
@@ -58,6 +65,7 @@ function addfield(i, label, text) {
 /^- \[[ x]\] /        {
     n++; prio_of[n] = prio
     line = strip($0); actor[n] = ""
+    fin[n] = (substr(line, 4, 1) == "x")
     if (match(line, /\(@[^)]+\)[ \t]*$/)) {
         actor[n] = substr(line, RSTART + 2, RLENGTH - 3)
         sub(/[ \t]*\(@[^)]+\)[ \t]*$/, "", line)
@@ -77,7 +85,7 @@ function addfield(i, label, text) {
 
 END {
     for (i = 1; i <= n; i++) {
-        if (actor[i] == "") continue
+        if (actor[i] == "" || fin[i]) continue
         f = files[i]
         while (match(f, /`[^`]+`/)) {
             held[substr(f, RSTART + 1, RLENGTH - 2)] = id[i]
@@ -86,6 +94,11 @@ END {
     }
 
     for (i = 1; i <= n; i++) {
+        if (fin[i]) {
+            state[i] = "done"; dn++
+            why[i] = (actor[i] != "" ? "@" actor[i] : "")
+            continue
+        }
         state[i] = "ready"; why[i] = ""
         if (actor[i] != "")    { state[i] = "held";    why[i] = "@" actor[i] }
         else if (blk[i] != "") { state[i] = "blocked"; why[i] = blk[i] }
@@ -93,7 +106,7 @@ END {
             split(dep[i], d, /,[ \t]*/)
             for (k in d) {
                 t = d[k]; gsub(/^[ \t]+|[ \t]+$/, "", t)
-                if (t != "" && (t in byid)) {
+                if (t != "" && (t in byid) && !fin[byid[t]]) {
                     state[i] = "blocked"
                     why[i] = why[i] (why[i] ? ", " : "waits on ") t
                 }
@@ -112,21 +125,37 @@ END {
 
     print "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
     print "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+    # Before the first paint, not at the end with the rest of the scripts: a theme
+    # applied after the body renders is a flash of the other one on every reload,
+    # and this page reloads itself whenever the queue changes.
+    print "<script>(function(){try{var t=localStorage.getItem('board-theme');"
+    print "if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t)}catch(e){}})();</script>"
     print "<title>" heading "</title><style>"
     print ":root{--bg:#fbfaf9;--fg:#1a1a18;--dim:#6b6a66;--card:#fff;--line:#e5e3df;--bar:#edebe7;"
-    print "--ready:#2e7d5b;--blocked:#b06c1d;--held:#2b6cb0;--contested:#a33a3a;--kbd:#f2f0ec}"
+    print "--ready:#2e7d5b;--blocked:#b06c1d;--held:#2b6cb0;--contested:#a33a3a;--done:#6b6a66;--kbd:#f2f0ec}"
     print "@media(prefers-color-scheme:dark){:root:not([data-theme=\"light\"]){"
     print "--bg:#171614;--fg:#eceae6;--dim:#9a9791;--card:#201f1c;--line:#32302c;--bar:#2a2825;"
-    print "--ready:#5fbf90;--blocked:#d9a05b;--held:#7aaede;--contested:#e08585;--kbd:#2a2825}}"
+    print "--ready:#5fbf90;--blocked:#d9a05b;--held:#7aaede;--contested:#e08585;--done:#9a9791;--kbd:#2a2825}}"
     print ":root[data-theme=\"dark\"]{--bg:#171614;--fg:#eceae6;--dim:#9a9791;--card:#201f1c;"
     print "--line:#32302c;--bar:#2a2825;--ready:#5fbf90;--blocked:#d9a05b;--held:#7aaede;"
-    print "--contested:#e08585;--kbd:#2a2825}"
+    print "--contested:#e08585;--done:#9a9791;--kbd:#2a2825}"
     print "*{box-sizing:border-box}"
     print "body{margin:0;background:var(--bg);color:var(--fg);padding:32px 16px 64px;"
     print "font:15px/1.55 ui-sans-serif,-apple-system,\"Segoe UI\",system-ui,sans-serif}"
     print ".w{max-width:940px;margin:0 auto}"
+    # Row gap first, column gap second. When the button wraps under the text it
+    # should read as belonging to it, so the gap above it is small and the space
+    # below comes from this margin rather than from .sub — which is why .sub has
+    # none of its own.
+    print ".hd{display:flex;justify-content:space-between;align-items:flex-start;"
+    print "gap:7px 14px;flex-wrap:wrap;margin-bottom:30px}"
+    print ".theme{flex:none;background:var(--card);color:var(--dim);border:1px solid var(--line);"
+    print "border-radius:8px;padding:6px 11px;font:inherit;font-size:12px;cursor:pointer;"
+    print "display:flex;align-items:center;gap:6px}"
+    print ".theme:hover{color:var(--fg);border-color:var(--dim)}"
+    print ".theme .g{font-size:13px;line-height:1}"
     print "h1{font-size:22px;margin:0 0 3px;letter-spacing:-.01em}"
-    print ".sub{color:var(--dim);font-size:13px;margin-bottom:26px}"
+    print ".sub{color:var(--dim);font-size:13px}"
     print ".live{color:var(--ready);font-weight:600}"
     print ".snap{color:var(--dim);font-weight:600}"
     print ".stale{color:var(--contested);font-weight:600}"
@@ -139,7 +168,15 @@ END {
     print ".track{flex:1;height:9px;background:var(--bar);border-radius:5px;overflow:hidden;display:flex}"
     print ".seg{height:100%}"
     print ".pn{width:32px;text-align:right;font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}"
-    print "h2{font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--dim);margin:28px 0 10px;font-weight:600}"
+    print "h2{font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--dim);margin:28px 0 10px;"
+    print "font-weight:600;cursor:pointer;user-select:none;display:flex;align-items:center;gap:7px}"
+    print "h2:hover{color:var(--fg)}"
+    print "h2:focus-visible{outline:2px solid var(--held);outline-offset:3px;border-radius:3px}"
+    print "h2 .caret{font-size:9px;line-height:1;transition:transform .12s;display:inline-block}"
+    print "h2[aria-expanded=\"true\"] .caret{transform:rotate(90deg)}"
+    print "h2 .n{font-variant-numeric:tabular-nums}"
+    print "section.sec.shut .cards{display:none}"
+    print "section.sec.shut h2{margin-bottom:0}"
     print "details.card{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--line);"
     print "border-radius:8px;margin-bottom:7px}"
     print "details.card>summary{padding:11px 14px;cursor:pointer;list-style:none;border-radius:8px}"
@@ -150,7 +187,11 @@ END {
     print ".card.blocked{border-left-color:var(--blocked)}"
     print ".card.held{border-left-color:var(--held)}"
     print ".card.contested{border-left-color:var(--contested)}"
+    print ".card.done{border-left-color:var(--dim)}"
+    print ".card.done .ct{color:var(--dim)}"
     print ".ct{font-weight:550;margin-bottom:3px}"
+    print ".no{display:inline-block;min-width:1.9em;color:var(--dim);font-weight:600;"
+    print "font-variant-numeric:tabular-nums;font-size:12.5px}"
     print ".cm{font-size:12.5px;color:var(--dim);display:flex;flex-wrap:wrap;gap:9px;align-items:baseline}"
     print ".id{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px}"
     print ".p{font-weight:650}.why{font-style:italic}"
@@ -164,12 +205,17 @@ END {
     print "footer{margin-top:34px;padding-top:14px;border-top:1px solid var(--line);color:var(--dim);font-size:12px}"
     print "</style></head><body><div class=\"w\">"
 
-    printf "<h1>%s</h1>\n<div class=\"sub\">%d tasks &middot; generated %s", heading, n, generated
+    print "<div class=\"hd\"><div>"
+    printf "<h1>%s</h1>\n<div class=\"sub\">%d tasks", heading, n - dn
+    if (dn) printf " &middot; %d completed", dn
+    printf " &middot; generated %s", generated
     if (refresh + 0 > 0)
         printf " &middot; <span class=\"live\" id=\"freshness\">checking every %ds</span>", refresh
     else
         printf " &middot; <span class=\"snap\" id=\"freshness\">snapshot</span>"
     printf " &middot; a view of %s, which is the only source of truth</div>\n", esc(source)
+    print "</div><button class=\"theme\" id=\"theme\" type=\"button\">"
+    print "<span class=\"g\" id=\"themeg\">&#9681;</span><span id=\"themet\">System</span></button></div>"
 
     print "<div class=\"stats\">"
     printf "<div class=\"stat\"><b style=\"color:var(--ready)\">%d</b><span>ready</span></div>\n", cnt["ready"] + 0
@@ -178,8 +224,8 @@ END {
     printf "<div class=\"stat\"><b style=\"color:var(--contested)\">%d</b><span>file contested</span></div>\n", cnt["contested"] + 0
     print "</div>"
 
-    split("ready held blocked contested", order, " ")
-    for (p = 0; p <= 3; p++) {
+    split("held ready contested blocked", order, " ")
+    for (p = 0; p <= 9; p++) {
         k = "P" p
         if (!(k in pc)) continue
         printf "<div class=\"prow\"><div class=\"plab\">%s</div><div class=\"track\">", k
@@ -190,15 +236,25 @@ END {
         printf "</div><div class=\"pn\">%d</div></div>\n", pc[k]
     }
 
-    split("ready contested blocked held", sec, " ")
-    split("Ready to start|Blocked by a file somebody holds|Blocked|In progress", lab, "|")
-    for (o = 1; o <= 4; o++) {
+    # In progress first: the coordinator's first question is who is on what, and
+    # a queue long enough to scroll buried it under the ready list. Done last,
+    # because it is the only section nobody acts on.
+    cnt["done"] = dn
+    split("held ready contested blocked done", sec, " ")
+    split("In progress|Ready to start|Blocked by a file somebody holds|Blocked|Completed", lab, "|")
+    num = 0
+    for (o = 1; o <= 5; o++) {
         s = sec[o]
-        if (!(s in cnt)) continue
-        printf "<h2>%s (%d)</h2>\n", lab[o], cnt[s]
-        for (p = 0; p <= 3; p++) for (i = 1; i <= n; i++) {
+        if (!(s in cnt) || cnt[s] + 0 == 0) continue
+        printf "<section class=\"sec\" data-sec=\"%s\">", s
+        printf "<h2 tabindex=\"0\" role=\"button\" aria-expanded=\"true\">"
+        printf "<span class=\"caret\">&#9654;</span>%s <span class=\"n\">(%d)</span></h2>\n", lab[o], cnt[s]
+        print "<div class=\"cards\">"
+        for (p = 0; p <= 9; p++) for (i = 1; i <= n; i++) {
             if (state[i] != s || prio_of[i] != "P" p) continue
-            printf "<details class=\"card %s\" id=\"t-%s\"><summary><div class=\"ct\">%s</div><div class=\"cm\">", s, esc(id[i]), esc(title[i])
+            num++
+            printf "<details class=\"card %s\" id=\"t-%s\"><summary><div class=\"ct\">", s, esc(id[i])
+            printf "<span class=\"no\">%d</span>%s</div><div class=\"cm\">", num, esc(title[i])
             printf "<span class=\"p\" style=\"color:var(--%s)\">%s</span><span class=\"id\">%s</span>", s, prio_of[i], esc(id[i])
             if (tags[i] != "") printf "<span>%s</span>", esc(tags[i])
             if (why[i] != "")  printf "<span class=\"why\">%s</span>", esc(why[i])
@@ -207,21 +263,78 @@ END {
                 printf "<div class=\"f\"><div class=\"fl\">%s</div><div class=\"fv\">%s</div></div>\n", esc(flab[i, j]), md(ftxt[i, j])
             print "</div></details>"
         }
+        print "</div></section>"
     }
 
     printf "<footer>Regenerate with <code>%s</code>, or keep it current with <code>%s --serve</code>. Nothing here is editable &mdash; change the task file.</footer>\n", label, label
     print "</div>"
+
+    # A section heading shows and hides its list of tasks. It does not touch the
+    # cards' own open state: expanding a card is what reveals Details and
+    # Acceptance, and a heading that did both would make "collapse this section"
+    # and "expand everything in it" the same gesture.
+    #
+    # Its own script, not folded into the one below, because that one is wrapped
+    # in a try for sessionStorage and a throw there would take this with it — a
+    # heading that silently does nothing when clicked is worse than no affordance.
+    # Which sections are shut is remembered below, beside the open cards.
+    print "<script>"
+    print "document.querySelectorAll('section.sec').forEach(function(sec){"
+    print "var h=sec.querySelector('h2');if(!h)return;"
+    print "function flip(){var shut=sec.classList.toggle('shut');"
+    print "h.setAttribute('aria-expanded',shut?'false':'true');"
+    print "if(sec.saveShut)sec.saveShut()}"
+    print "h.addEventListener('click',flip);"
+    print "h.addEventListener('keydown',function(e){"
+    print "if(e.key==='Enter'||e.key===' '){e.preventDefault();flip()}});"
+    print "});"
+    print "</script>"
+
+    # System, light, dark — three states, not a two-way switch. Following the OS
+    # is the default and has to stay reachable, or somebody who once clicked the
+    # button is pinned to whichever theme they picked for the rest of the year.
+    # localStorage, not sessionStorage: a theme is not a per-tab detail, and it is
+    # the one thing here worth surviving the browser being closed.
+    print "<script>"
+    print "(function(){var b=document.getElementById('theme');if(!b)return;"
+    print "var g=document.getElementById('themeg'),t=document.getElementById('themet');"
+    print "var seq=['system','light','dark'],lab={system:'System',light:'Light',dark:'Dark'};"
+    print "var gl={system:'\\u25D1',light:'\\u2600',dark:'\\u263E'};"
+    print "function get(){try{var v=localStorage.getItem('board-theme');"
+    print "return v==='light'||v==='dark'?v:'system'}catch(e){return 'system'}}"
+    print "function put(v){var r=document.documentElement;"
+    print "if(v==='system')r.removeAttribute('data-theme');else r.setAttribute('data-theme',v);"
+    print "g.textContent=gl[v];t.textContent=lab[v];"
+    print "b.setAttribute('aria-label','Theme: '+lab[v]+', click to change');"
+    print "try{if(v==='system')localStorage.removeItem('board-theme');"
+    print "else localStorage.setItem('board-theme',v)}catch(e){}}"
+    print "put(get());"
+    print "b.addEventListener('click',function(){put(seq[(seq.indexOf(get())+1)%3])});"
+    print "})();"
+    print "</script>"
+
     # Survive the meta refresh: keep which cards are open and where the page was.
     # Wrapped because sessionStorage throws in some contexts, and the board has
     # to render correctly without it.
     print "<script>"
-    print "(function(){try{var K='board-open',S=sessionStorage;"
+    print "(function(){try{var K='board-open',C='board-shut',S=sessionStorage;"
     print "var open=JSON.parse(S.getItem(K)||'[]');"
     print "open.forEach(function(id){var e=document.getElementById(id);if(e)e.open=true});"
     print "document.querySelectorAll('details.card').forEach(function(d){"
     print "d.addEventListener('toggle',function(){var a=[];"
     print "document.querySelectorAll('details.card[open]').forEach(function(x){a.push(x.id)});"
     print "S.setItem(K,JSON.stringify(a))})});"
+    # Shut sections are keyed by state name, not by position: a task moving from
+    # ready to held changes which sections exist, and a section that was shut
+    # should come back shut rather than whichever one is now third.
+    print "var shut=JSON.parse(S.getItem(C)||'[]');"
+    print "document.querySelectorAll('section.sec').forEach(function(sec){"
+    print "var h=sec.querySelector('h2');"
+    print "if(shut.indexOf(sec.dataset.sec)>=0){sec.classList.add('shut');"
+    print "if(h)h.setAttribute('aria-expanded','false')}"
+    print "sec.saveShut=function(){var a=[];"
+    print "document.querySelectorAll('section.sec.shut').forEach(function(x){a.push(x.dataset.sec)});"
+    print "S.setItem(C,JSON.stringify(a))}});"
     print "var y=S.getItem('board-scroll');if(y)window.scrollTo(0,+y);"
     print "window.addEventListener('scroll',function(){S.setItem('board-scroll',window.scrollY)},{passive:true});"
     print "}catch(e){}})();"

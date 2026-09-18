@@ -96,9 +96,10 @@ A task is **ready** when all three hold, and the third is the one people skip:
 
 1. **Nobody has claimed it** — no `(@actor)` on its checkbox line.
 2. **Nothing blocks it** — no `**Blocked**`, and every id in `**Blocked by**` has
-   gone from the file. Removing a task's block is how the queue records that it is
-   done, so a dependency that is still present is a dependency that is still open.
-   No extra state, and nothing to keep in sync.
+   gone from the file or been checked off. Deleting a task's block, or ticking its
+   box, is how the queue records that it is done, so a dependency still sitting
+   there unticked is a dependency that is still open. No extra state, and nothing
+   to keep in sync.
 3. **Its files are free** — no path in its `**Files**` appears in the `**Files**` of
    a task somebody already holds.
 
@@ -131,16 +132,27 @@ by indented `- **Field**: value` lines.
 |---|---|
 | `**ID**` | the handle; referenced by `**Blocked by**` |
 | `**Files**` | ownership. Backticked paths, and the basis of rule 3 |
-| `**Blocked by**` | comma-separated ids. Unmet while the id is still in the file |
+| `**Blocked by**` | comma-separated ids. Unmet while the id is still in the file and unticked |
 | `**Blocked**` | prose reason, for what no task id can express — a person, a date, a decision |
 | `**Details**`, `**Acceptance**`, `**Note**` | shown when a card is expanded; repeatable |
 | `**Tags**` | shown on the card |
 | `(@actor)` | on the checkbox line: this task is held |
+| `- [x]` | this task is done. Listed at the bottom of the board, and out of everything else |
 
 Only the checkbox line and `**ID**` are required. Everything else is optional, and
 unknown fields are ignored rather than rejected, so the file stays yours.
 
-Priorities are any `## P<n>`. `P0` sorts first.
+Priorities are any `## P<n>`, from `P0` to `P9`, and `P0` sorts first.
+
+**Two ways to finish a task, and they mean the same thing.** Delete the block, or
+tick its box to `- [x]`. Deleting is the default and the reason there is no state
+to keep in sync — history lives in `git log`. Ticking keeps the block visible at
+the bottom of the board, which is worth it when the next person needs to see that
+something was done rather than never planned. Either way a done task stops
+counting: it holds none of its `**Files**`, and a `**Blocked by**` naming it is
+satisfied. That has to hold both ways round, or ticking a box would be worse than
+deleting the block — the task would go on blocking its dependents with nothing
+saying why.
 
 Try it:
 
@@ -155,10 +167,33 @@ Counts by state, a stacked bar per priority, and one card per task. Clicking a c
 expands it to the full `Details`, `Files`, `Acceptance` and `Notes`, with backticks
 and bold rendered — the whole block a worker would read, without opening the file.
 
+Sections run **In progress, Ready to start, contested, Blocked, Completed**. In
+progress is first because the coordinator's first question is who is on what, and
+completed is last because it is the only section nobody acts on. Clicking a section
+heading folds that section's task list away, and clicking again brings it back —
+which is how you get a long queue down to the part you are working on. It does not
+touch the cards themselves: expanding a card is what shows its `Details` and
+`Acceptance`, and one gesture cannot sensibly mean both. Which sections you folded
+survives a reload, keyed by section rather than by position, so a task moving from
+ready to held does not hand your folded state to a different section.
+
+Cards are numbered down the page. That is only a way to say "look at 7" out loud —
+the numbers shift as tasks change state, and `**ID**` is the handle that does not.
+
+Completed tasks are left out of the four counts and the priority bars. Those exist
+to answer what to do next, and a finished task is not a candidate; a "done" tile
+would only ever grow.
+
+The theme button beside the title cycles **System, Light, Dark**, and the choice
+is remembered across sessions. System is the default and stays reachable, so one
+click on a laptop that happened to be in dark mode does not pin you to it. The
+board applies a stored choice before the first paint, because a page that reloads
+itself whenever the queue moves would otherwise flash the other theme each time.
+
 It is one HTML file with no external requests: no CDN, no fonts, no analytics.
-Light and dark follow the system, and it works at phone width. A small inline script
-keeps the open cards and the scroll position across a reload, wrapped in `try`/`catch`
-so the board still renders where `sessionStorage` throws.
+It works at phone width. Small inline scripts keep the open cards, the folded
+sections and the scroll position across a reload, each wrapped in `try`/`catch` so
+the board still renders where storage throws.
 
 **The page verifies that it is current; it never asserts it.** Each render writes its
 epoch to a `.stamp` file beside the HTML and bakes the same number into the page. The

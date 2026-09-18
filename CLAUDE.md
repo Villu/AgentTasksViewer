@@ -1,0 +1,193 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this is
+
+Three files. Two CLI views of a markdown task queue, plus the awk that renders one
+of them. No build, no package manager, no dependencies beyond `bash` and `awk`.
+
+| file | role |
+|---|---|
+| `tasks-ready` | bash + a single inline awk program. Prints what can start now, and with `--all` why everything else cannot. |
+| `tasks-board` | bash driver only: argument parsing, `--ref` resolution, change detection, the watch loop, the http server. Renders nothing itself. |
+| `tasks-board.awk` | the whole HTML renderer — CSS, markup and every inline script are `print` statements in its `END` block (bar the theme preamble, printed into `<head>`). Found via `dirname $0` from `tasks-board`. |
+
+`examples/TASKS.md` is the fixture: six live tasks covering all four live states,
+plus one `- [x]` task that a live task depends on.
+
+## Commands
+
+```bash
+./tasks-ready --file examples/TASKS.md --all
+```
+
+```bash
+./tasks-board --file examples/TASKS.md --out /tmp/board.html --title "Example queue"
+```
+
+```bash
+./tasks-board --serve --file examples/TASKS.md --out /tmp/board.html
+```
+
+There is no test suite, no linter and no CI. Verification is running both tools
+against `examples/TASKS.md` and checking that they agree: `tasks-ready`'s READY
+count must equal the board's `ready` tile, and its NOT READY reasons must match
+the card subtitles. The example file covers all five states, including one `- [x]`
+task that another task names in `**Blocked by**` — that pair is what proves a done
+dependency counts as met.
+
+It does not cover `P4+`, unknown fields, or a done task whose `**Files**` a live
+task also claims. Write a throwaway fixture in the scratchpad for those; the last
+one is the regression that matters, because a done task must hold nothing.
+
+`--serve` needs a working `python3`/`py`/`python`. Pick a port nothing else is on:
+on Windows a second `http.server` binds the same port without error and the older
+listener keeps answering, so a stale server from another session looks exactly
+like your board failing to render.
+
+## The one invariant
+
+The three-rule readiness check is implemented **twice**: in the `END` block of the
+inline awk inside `tasks-ready`, and in the `END` block of `tasks-board.awk`.
+Both build the same `held[path] -> id` map from claimed tasks' `**Files**`, and
+both resolve `**Blocked by**` by asking whether the id is still `in byid` and not
+done.
+
+**If you change one, change the other in the same commit.** This is stated at the
+top of `tasks-board.awk` and in the README, and it is the only thing in the repo
+that cannot be recovered by regenerating something.
+
+The `- [x]` done state is part of that shared contract, not presentation. A done
+task **holds none of its `**Files**`** and **satisfies a `**Blocked by**` naming
+it**, in both implementations. Break either half and ticking a box becomes worse
+than deleting the block: the task keeps blocking its dependents and keeps owning
+its files, with nothing on the board saying why.
+
+Two priority loops used to disagree — `tasks-board.awk` iterated `P0..P3` while
+`tasks-ready` went to `P9`, so a `P4` task was counted in the stat tiles and then
+dropped from the cards. Both now go to `P9`. A fixture with `P4` and `P7` is the
+cheapest way to catch a reintroduction.
+
+## How the parsers work
+
+Both are line-oriented awk over the markdown, with no lookahead:
+
+- `/^## P[0-9]/` sets the current priority; `/^- \[[ x]\] /` increments `n` and
+  opens a new task. Every `- **Field**:` rule after that writes into index `n`.
+  There is no block terminator — a field line belongs to whatever checkbox came
+  last, so a stray field before the first task writes to index 0.
+- `**ID**` is taken as `$NF` (last whitespace-separated field), so an id cannot
+  contain a space. It populates `byid[id] = n`.
+- `**Files**` paths are extracted by repeatedly matching `` /`[^`]+`/ `` — only
+  backticked paths count for rule 3. A path written without backticks is invisible
+  to ownership checking.
+- Rule 2 is `(t in byid) && !fin[byid[t]]`: a dependency is unmet while its block
+  is still in the file *and* still unticked. Deleting the block and ticking it are
+  the two ways to record that it finished.
+- `fin[n]` is `substr(line, 4, 1) == "x"` — the character inside the brackets of
+  `- [x] `. It is read off the already-`strip()`ped line, so a CRLF file is fine.
+- Order matters in the rule list: `/\*\*Blocked by\*\*:/` must precede
+  `/\*\*Blocked\*\*:/`, because the latter's regex also matches a "Blocked by"
+  line. Both use `next`.
+
+`tasks-ready` reduces to ready / not-ready-with-a-reason, and leaves done tasks
+out of both lists with a `N tasks, M completed` trailer. `tasks-board.awk`
+produces five named states — `ready`, `held`, `blocked`, `contested`, `done` —
+which are also the CSS class names and the `--<state>` colour variables, so a new
+state needs a colour in all three theme blocks or its label renders uncoloured.
+
+Section order on the board is `held ready contested blocked done`, set by two
+parallel `split()` calls — the state keys and the human labels — which must stay
+in the same order. `cnt["done"]` is assigned after the state loop rather than
+accumulated in it, because done tasks `continue` before the counting line so they
+stay out of the stat tiles and the priority bars.
+
+## The page's three scripts
+
+They are separate on purpose, and each one's failure has to be survivable by the
+others:
+
+1. **Section folding.** A heading toggles `.shut` on its `<section>`, which hides
+   that section's `.cards` wrapper. It does **not** open or close the cards: a
+   card's `<details>` is what reveals `Details` and `Acceptance`, and one gesture
+   cannot mean both "collapse this section" and "expand everything in it". Kept
+   out of the storage script so a `sessionStorage` throw cannot leave a heading
+   that looks clickable and does nothing.
+2. **Storage.** Restores open cards (`board-open`) and folded sections
+   (`board-shut`), then saves on change. Folded sections are keyed by state name
+   from `data-sec`, not by index — sections appear and disappear as tasks change
+   state, so an index would restore the wrong one. It installs `sec.saveShut` for
+   script 1 to call, which is why script 1 null-checks it.
+3. **Freshness.** See below.
+
+The theme control is a fourth, smaller piece, split across two places: a tiny
+script **in `<head>`** that applies a stored `data-theme` before the first paint,
+and the button's cycle handler at the end. Keep the head script first — the board
+reloads itself whenever the queue changes, and applying the theme after body
+render flashes the other theme on every one of those reloads. It cycles
+system → light → dark, and `system` is represented by *removing* the attribute so
+the `prefers-color-scheme` block takes over. It uses `localStorage` where
+everything else uses `sessionStorage`, deliberately: a theme should outlive the
+tab, a scroll position should not.
+
+## Constraints on the awk
+
+Target is **POSIX awk** (mawk, BusyBox awk), not gawk, even though gawk is what is
+usually installed. No `gensub`, no capture groups in `gsub`, no `length(array)`,
+no `asort`. The hand-rolled `md()` in `tasks-board.awk` — which toggles `**`
+into `<strong>` and backticks into `<code>` by walking the string — exists for
+exactly this reason; do not "simplify" it into a `gensub`.
+
+`esc()` runs before `md()`, always. The generated page has no external requests:
+no CDN, no fonts, no analytics. Keep it that way.
+
+## The freshness contract
+
+This is the part that is easy to break invisibly.
+
+Each render writes one epoch to **both** the page (`-v epoch=`) and a sidecar
+`$OUT.stamp`. The page fetches the stamp on an interval and compares: equal means
+current, **newer means reload**. If the stamp were ever written a second later
+than the number baked into the page, every page would read itself as superseded
+and reload forever. One `ts` variable in `render()` feeds both — keep it that way.
+
+That `ts` is declared `local` deliberately. The watch loop holds the *source's*
+version in `now`/`last`; a global assignment in `render()` would put an epoch into
+`last` and make every subsequent interval compare a version against an epoch, and
+re-render forever. The bug only shows after the first real change, so a quiet
+watch looks correct.
+
+`refresh=0` means a one-shot render: the page says `snapshot` and counts up, and
+makes no liveness claim. A `file://` page cannot fetch its sibling stamp, so it
+reports `NOT refreshing` and names the reason. **A view that cannot verify it is
+current must say so — never assert liveness.** Both of those behaviours replaced
+bugs (see `git log`), so do not reintroduce an unconditional banner.
+
+## `--ref` mode
+
+`--ref origin/main` reads the file from a git ref instead of the working copy.
+It changes three things at once: `--file` becomes **repo-relative**, change
+detection becomes the blob sha instead of an mtime, and a remote ref is fetched
+before every check. Fetch failures are swallowed on purpose. The page's `source`
+string changes to name the ref, so a board of someone else's branch cannot be
+mistaken for your checkout.
+
+`python_cmd()` tries `python3`, `py`, `python` and **runs** each candidate rather
+than using `command -v`, because on Windows `command -v python` finds the
+Microsoft Store stub, which exits 49 without being python.
+
+## Repo conventions
+
+- The generated HTML and `*.html.stamp` are gitignored and must never be
+  committed — a committed snapshot is the second source of truth this repo exists
+  to avoid.
+- `.gitattributes` pins `tasks-ready`, `tasks-board` and `*.awk` to LF. Do not let
+  an editor write CRLF into them; both awk programs also `strip()` `\r` from input
+  so CRLF *task files* are fine.
+- Commit subjects here are a full sentence naming the failure, not a conventional-commit
+  prefix — "The board rendered your working copy while the queue lived on the remote".
+  Bodies explain how it was found and why the fix is shaped the way it is. Match that.
+- The README is the user-facing document and carries the design argument. If a
+  flag, field or state changes, the README's flag list, field table and
+  "three rules" section change with it.
