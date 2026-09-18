@@ -50,12 +50,23 @@ Linux, macOS, Git Bash and WSL.
 ```bash
 tasks-ready                      # what can start now
 tasks-ready --all                # and what cannot, with the reason for each
-tasks-board                      # write ./tasks-board.html
-tasks-board --watch              # re-render on every change; the page refreshes itself
-tasks-board --watch 2 --out docs/board.html --title "Platform queue"
+tasks-board                      # write ./tasks-board.html, once
+tasks-board --serve              # re-render on change AND serve it, so it stays current
+tasks-board --serve 9000         # the same on a port you choose (default 8787)
+tasks-board --watch              # re-render on change without serving (see the warning below)
+tasks-board --serve 8787 --out docs/board.html --title "Platform queue"
 ```
 
+Then open the URL `--serve` prints — `http://127.0.0.1:8787/tasks-board.html`.
+Leave the tab open and it reloads itself whenever the task file changes.
+
 Both default to `./TASKS.md`, overridable with `--file` or `$TASKS_FILE`.
+
+**Prefer `--serve` over `--watch`.** A board opened as a `file://` URL cannot read
+the stamp written beside it, so it cannot tell whether it is still the current
+render. It will say so on the page rather than claim to be live — but it will not
+update. `--serve` needs `python3` on `PATH` and serves only on `127.0.0.1`; without
+one it falls back to `--watch` and says so.
 
 Gitignore the HTML. A committed snapshot is a second copy that ages.
 
@@ -125,10 +136,24 @@ expands it to the full `Details`, `Files`, `Acceptance` and `Notes`, with backti
 and bold rendered — the whole block a worker would read, without opening the file.
 
 It is one HTML file with no external requests: no CDN, no fonts, no analytics.
-Light and dark follow the system, and it works at phone width. Under `--watch` the
-page carries a meta refresh; a small inline script keeps the open cards and the
-scroll position across it, wrapped in `try`/`catch` so the board still renders where
-`sessionStorage` throws.
+Light and dark follow the system, and it works at phone width. A small inline script
+keeps the open cards and the scroll position across a reload, wrapped in `try`/`catch`
+so the board still renders where `sessionStorage` throws.
+
+**The page verifies that it is current; it never asserts it.** Each render writes its
+epoch to a `.stamp` file beside the HTML and bakes the same number into the page. The
+page re-reads that stamp on an interval and reports what it found: `live, checked
+15:42:57` when it matches, a reload when the stamp is newer, and `NOT refreshing`
+naming the reason when it cannot read it at all. A one-shot render says `snapshot`
+and counts up how long ago it was written, because it makes no claim to be current.
+
+This replaced a meta refresh and an unconditional "live, refreshing every 5s" banner.
+That banner was wrong wherever the refresh could not reach the file — a `file://` page
+in an embedded viewer reloaded a snapshot of itself every five seconds and went on
+printing "live" while the queue moved underneath it. The failure was invisible for the
+worst possible reason: re-opening such a board *does* show fresh content, so every
+manual check confirmed the banner. A view that cannot know whether it is current must
+say that, not guess.
 
 ## Keeping the two in step
 

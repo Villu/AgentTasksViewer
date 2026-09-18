@@ -1,3 +1,4 @@
 # Generated views. The task file is the source of truth; these are not.
 tasks-board.html
 examples/board-preview.html
+*.html.stamp

@@ -5,15 +5,21 @@
 # source of truth, and this is a view of it that can be deleted and regenerated
 # at any time. That is deliberate. A tracker with its own database becomes a
 # second source of truth, and then the two disagree and nobody can say which is
-# right. Gitignore the output.
+# right. Gitignore the output, and the .stamp written beside it.
 #
 # Usage:
 #   tasks-board [options]
 #     --file PATH       task file to read      (default: ./TASKS.md, or $TASKS_FILE)
 #     --out PATH        html to write          (default: ./tasks-board.html)
 #     --title TEXT      heading on the page    (default: the directory name)
-#     --watch [SECONDS] re-render whenever the file changes, and tell an open
-#                       page to refresh itself (default: 5)
+#     --watch [SECONDS] re-render whenever the file changes (default: 5)
+#     --serve [PORT]    --watch, and serve the board over http so it can actually
+#                       refresh itself (default: 8787). Needs python3.
+#
+# Prefer --serve. A board opened as a file:// URL cannot fetch the stamp beside
+# it, so it cannot tell whether it is still current: it will say so on the page
+# rather than claim to be live, but it will not update. Over http it re-checks
+# every interval and reloads itself when the task file changes.
 #
 # --watch polls the file's modification time rather than using a filesystem
 # watcher, so it behaves the same in bash, Git Bash, WSL and over ssh, and costs
@@ -26,7 +32,9 @@ FILE="${TASKS_FILE:-TASKS.md}"
 OUT="tasks-board.html"
 TITLE=""
 WATCH=0
+SERVE=0
 EVERY=5
+PORT=8787
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -35,7 +43,9 @@ while [ $# -gt 0 ]; do
     --title) TITLE="${2:?--title needs text}"; shift 2 ;;
     --watch) WATCH=1
              case "${2:-}" in ''|--*) shift ;; *) EVERY="$2"; shift 2 ;; esac ;;
-    -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --serve) WATCH=1; SERVE=1
+             case "${2:-}" in ''|--*) shift ;; *) PORT="$2"; shift 2 ;; esac ;;
+    -h|--help) sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -44,11 +54,25 @@ done
 [ -f "$AWK" ]  || { echo "tasks-board.awk not found beside $0" >&2; exit 1; }
 [ -n "$TITLE" ] || TITLE="$(basename "$(cd "$(dirname "$FILE")" && pwd)")"
 
+STAMP="$OUT.stamp"
+
 render() {
+  # `local ts`, not `now`: the watch loop below keeps the file's mtime in `now`,
+  # and a global assignment here would land this epoch in `last` after a render,
+  # so every later interval compares an mtime against an epoch and re-renders
+  # forever. It only misfires after the first real change, which is why a quiet
+  # watch looks correct.
+  # One epoch for both the page and the stamp. If the stamp were even a second
+  # newer than the number baked into the page, every page would read itself as
+  # superseded and reload forever.
+  local ts; ts="$(date -u +%s)"
   awk -v generated="$(date -u '+%Y-%m-%d %H:%M:%S UTC')" \
       -v heading="$TITLE" \
       -v refresh="$1" \
+      -v epoch="$ts" \
+      -v stamp="$(basename "$STAMP")" \
       -f "$AWK" "$FILE" > "$OUT"
+  printf '%s\n' "$ts" > "$STAMP"
 }
 
 mtime() {
@@ -58,15 +82,41 @@ mtime() {
     || ls -l --time-style=+%s "$FILE" 2>/dev/null | awk '{print $6}'
 }
 
+python_cmd() {
+  # Not `command -v python`: on Windows that finds the Microsoft Store stub,
+  # which prints an install message and exits 49 without being python at all.
+  # Ask each candidate to run something, and believe only the one that does.
+  for c in python3 py python; do
+    if "$c" -c 'import sys; sys.exit(0)' >/dev/null 2>&1; then echo "$c"; return 0; fi
+  done
+  return 1
+}
+
 if [ "$WATCH" = "0" ]; then
   render 0
   echo "wrote $OUT"
+  echo "it is a snapshot and says so on the page; --serve keeps one current"
   exit 0
 fi
 
 render "$EVERY"
-echo "watching $FILE — open $OUT and leave it open; it refreshes every ${EVERY}s"
-echo "ctrl-c to stop"
+
+if [ "$SERVE" = "1" ]; then
+  if PY="$(python_cmd)"; then
+    DIR="$(cd "$(dirname "$OUT")" && pwd)"
+    "$PY" -m http.server "$PORT" --bind 127.0.0.1 --directory "$DIR" >/dev/null 2>&1 &
+    SRV=$!
+    trap 'kill "$SRV" 2>/dev/null || true' EXIT INT TERM
+    echo "open http://127.0.0.1:$PORT/$(basename "$OUT")"
+  else
+    SERVE=0
+    echo "no working python3 found, so not serving" >&2
+    echo "opened over file:// the board will say it cannot verify itself" >&2
+  fi
+fi
+
+[ "$SERVE" = "1" ] || echo "open $OUT — over file:// it will tell you it cannot refresh"
+echo "watching $FILE — ctrl-c to stop"
 last="$(mtime)"
 while true; do
   sleep "$EVERY"

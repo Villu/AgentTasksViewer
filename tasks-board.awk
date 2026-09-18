@@ -7,7 +7,13 @@
 # would drift, so if you change one, change the other in the same commit.
 #
 # -v heading=TEXT heading on the page (title is already the per-task array).
-# -v refresh=N    emit a meta refresh every N seconds, for `tasks-board --watch`.
+# -v refresh=N    how often the page re-checks the stamp, for --watch/--serve.
+#                 0 means a one-shot render, which says "snapshot" and claims
+#                 nothing about being current.
+# -v stamp=NAME   sidecar file holding the render's epoch, fetched by the page to
+#                 verify it is showing the current render. Relative to the html.
+# -v epoch=N      this render's epoch seconds. Must equal what is in the stamp
+#                 file, or the page reloads forever.
 
 function esc(s) { gsub(/&/, "\\&amp;", s); gsub(/</, "\\&lt;", s); gsub(/>/, "\\&gt;", s); return s }
 function strip(s) { gsub(/\r/, "", s); return s }
@@ -99,7 +105,6 @@ END {
 
     print "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
     print "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-    if (refresh + 0 > 0) printf "<meta http-equiv=\"refresh\" content=\"%d\">\n", refresh
     print "<title>" heading "</title><style>"
     print ":root{--bg:#fbfaf9;--fg:#1a1a18;--dim:#6b6a66;--card:#fff;--line:#e5e3df;--bar:#edebe7;"
     print "--ready:#2e7d5b;--blocked:#b06c1d;--held:#2b6cb0;--contested:#a33a3a;--kbd:#f2f0ec}"
@@ -116,6 +121,8 @@ END {
     print "h1{font-size:22px;margin:0 0 3px;letter-spacing:-.01em}"
     print ".sub{color:var(--dim);font-size:13px;margin-bottom:26px}"
     print ".live{color:var(--ready);font-weight:600}"
+    print ".snap{color:var(--dim);font-weight:600}"
+    print ".stale{color:var(--contested);font-weight:600}"
     print ".stats{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:24px}"
     print ".stat{flex:1 1 130px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}"
     print ".stat b{display:block;font-size:26px;line-height:1.15;font-variant-numeric:tabular-nums}"
@@ -151,7 +158,10 @@ END {
     print "</style></head><body><div class=\"w\">"
 
     printf "<h1>%s</h1>\n<div class=\"sub\">%d tasks &middot; generated %s", heading, n, generated
-    if (refresh + 0 > 0) printf " &middot; <span class=\"live\">live, refreshing every %ds</span>", refresh
+    if (refresh + 0 > 0)
+        printf " &middot; <span class=\"live\" id=\"freshness\">checking every %ds</span>", refresh
+    else
+        printf " &middot; <span class=\"snap\" id=\"freshness\">snapshot</span>"
     print " &middot; a view of the task file, which is the only source of truth</div>"
 
     print "<div class=\"stats\">"
@@ -209,5 +219,29 @@ END {
     print "window.addEventListener('scroll',function(){S.setItem('board-scroll',window.scrollY)},{passive:true});"
     print "}catch(e){}})();"
     print "</script>"
+
+    # Freshness is verified, never asserted. The page fetches the stamp its
+    # renderer writes and reports what it found: current, superseded (reload), or
+    # unverifiable. A file:// board cannot fetch a sibling, so it says so instead
+    # of claiming to be live while showing a frozen render - which is the bug this
+    # replaced. All ASCII, single-quoted, so nothing here needs escaping.
+    printf "<script>(function(){var R=%d,M=%d,S='%s';\n", refresh + 0, epoch + 0, stamp
+    print "var el=document.getElementById('freshness');if(!el)return;"
+    print "function p(c,t){el.className=c;el.textContent=t}"
+    print "function z(n){return (n<10?'0':'')+n}"
+    print "function ago(s){return s<60?s+'s ago':s<3600?Math.floor(s/60)+'m ago':Math.floor(s/3600)+'h ago'}"
+    print "function nows(){return Math.floor(Date.now()/1000)}"
+    print "if(!R){var tick=function(){p('snap','snapshot, rendered '+ago(nows()-M))};"
+    print "tick();setInterval(tick,1000);return}"
+    print "if(!S){p('stale','cannot verify: renderer wrote no stamp');return}"
+    print "function check(){fetch(S+'?_='+Date.now(),{cache:'no-store'})"
+    print ".then(function(r){if(!r.ok)throw 0;return r.text()})"
+    print ".then(function(t){var s=parseInt(t,10);if(s>M){location.reload();return}"
+    print "var d=new Date();p('live','live, checked '+z(d.getHours())+':'+z(d.getMinutes())+':'+z(d.getSeconds()))})"
+    print ".catch(function(){var f=location.protocol.indexOf('http')!==0;"
+    print "p('stale',f?'NOT refreshing: a '+location.protocol+' board cannot read '+S+' - run tasks-board --serve'"
+    print ":'NOT refreshing: cannot read '+S+' - is the renderer still running?')})}"
+    print "check();setInterval(check,R*1000);"
+    print "})();</script>"
     print "</body></html>"
 }
