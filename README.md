@@ -221,6 +221,10 @@ ready to held does not hand your folded state to a different section.
 
 Cards are numbered down the page. That is only a way to say "look at 7" out loud —
 the numbers shift as tasks change state, and `**ID**` is the handle that does not.
+The counter covers the sections read from the task file; **closed rows are not
+numbered**, because they come from the log and already carry an id and a sha that
+do not move. A number there would have been an index into a historical record
+that re-counted itself whenever an unrelated live task was finished.
 
 Completed tasks are left out of the four counts and the priority bars. Those exist
 to answer what to do next, and a finished task is not a candidate; a "done" tile

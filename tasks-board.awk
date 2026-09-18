@@ -300,8 +300,16 @@ END {
                 cid = ""
                 q = index(ctext, ":")
                 if (q > 0) { cid = substr(ctext, 1, q - 1); ctext = substr(ctext, q + 2) }
-                num++
-                printf "<div class=\"card closed\"><div class=\"ct\"><span class=\"no\">%d</span>%s</div><div class=\"cm\">", num, esc(ctext)
+                # No row number here, and the counter deliberately does not
+                # advance. It counts rows read from the task file; these come
+                # from the log. Numbering both made a closed row's number depend
+                # on how many live tasks happened to be above it, so closing one
+                # task renumbered every historical entry — an index that moves
+                # for reasons that have nothing to do with the thing it indexes.
+                # These rows already carry two handles that do not move, the id
+                # and the sha, and an unstable number beside stable ones invites
+                # exactly the use it cannot support: writing it down.
+                printf "<div class=\"card closed\"><div class=\"ct\">%s</div><div class=\"cm\">", esc(ctext)
                 if (cid != "") printf "<span class=\"id\">%s</span>", esc(cid)
                 printf "<span>%s</span><span class=\"id\">%s</span></div></div>\n", esc(cdate), esc(csha)
             }

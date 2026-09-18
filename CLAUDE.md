@@ -197,6 +197,15 @@ Closed rows are `div.card.closed`, not `<details>` — there is nothing to expan
 and a card that opens to nothing is worse than a row. The storage script only
 looks at `details.card`, so they are skipped by it automatically.
 
+**Closed rows carry no row number, and `num` must not advance over them.** It
+counts rows read from the task file. Numbering both sources made a closed row's
+number a function of how many live tasks sat above it, so finishing an unrelated
+task renumbered the whole history — observed as a list that started at 28 one
+hour and 27 the next. These rows already have an id and a short sha, both stable;
+adding a number that moves invites the one use it cannot support, which is
+writing it down and referring back. Restoring the number "for consistency" is the
+tempting wrong fix.
+
 ## The page's three scripts
 
 They are separate on purpose, and each one's failure has to be survivable by the
