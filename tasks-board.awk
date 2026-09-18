@@ -148,7 +148,7 @@ END {
     # below comes from this margin rather than from .sub — which is why .sub has
     # none of its own.
     print ".hd{display:flex;justify-content:space-between;align-items:flex-start;"
-    print "gap:7px 14px;flex-wrap:wrap;margin-bottom:30px}"
+    print "gap:7px 14px;flex-wrap:wrap;margin-bottom:19px}"
     print ".theme{flex:none;background:var(--card);color:var(--dim);border:1px solid var(--line);"
     print "border-radius:8px;padding:6px 11px;font:inherit;font-size:12px;cursor:pointer;"
     print "display:flex;align-items:center;gap:6px}"
