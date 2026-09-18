@@ -97,7 +97,25 @@ fallback would answer a different question in the most expensive direction, whic
 is the thing being fixed. If the fetch fails but the ref still resolves locally,
 it says so on stderr *and* in that first line — `— FETCH FAILED, may be behind` —
 and answers anyway, because offline is a reason to be told you might be behind,
-not a reason to get nothing.
+not a reason to get nothing. A flag whose failure mode is "stop using the flag"
+would not be a safety flag.
+
+Because that refusal is the first thing a new setup meets, it names what it
+tried rather than only what failed:
+
+```
+$ tasks-ready --ref origin/main
+no such git ref: origin/main
+  this repository has no remote called 'origin'
+  remotes it does have: upstream
+  to read this checkout on purpose instead, pass --working-copy
+```
+
+**`--working-copy` is the opt-out**, and it exists so a wrapper can default
+`--ref` on. The last of the two wins, so a script may put `--ref origin/main`
+ahead of the caller's arguments and the caller can still say no. One explicit
+token, not an inferred absence — "drop `--ref`" is a rule somebody has to have
+been told, and the people who most need the remote are the ones who have not.
 
 With `--ref`, `--file` is a path inside the repository rather than on disk, a
 remote ref is fetched before every check, and change detection is the file's blob

@@ -89,8 +89,31 @@ Resolve the ref **before** complaining about a failed fetch. A typo'd ref also
 fails to fetch, and warning about staleness first puts a true statement about the
 wrong thing above the real error.
 
+`--working-copy` is the opt-out, and **the last of `--ref`/`--working-copy` wins**
+— not an error on conflict. That is what lets a wrapper put `--ref origin/main`
+ahead of the caller's arguments while the caller can still override it. Keep it
+that way; trader's `ops/ready.sh` is built on it.
+
+`tasks-ready`'s ref refusal names the remote and branch it tried, says whether
+that remote is configured at all, lists the ones that are, and points at
+`--working-copy`. It is the first thing a fresh clone meets, and "no such git ref"
+alone cannot be told apart from a broken queue by someone who has just arrived.
+
 Every `tasks-ready` run prints `queue: <source>` as its first line. Anything
 parsing that output sees it, so treat it as part of the interface.
+
+## Telling the consumer
+
+`~/projects/trader` vendors `tasks-board` and `tasks-board.awk` (and, once its
+`revendor-ready-sh` task lands, `tasks-ready`). Its coordinator asked for one
+standing notification, and it is the right one to honour: **if `tasks-board.awk`
+and `tasks-ready` ever stop agreeing on the three rules, say so immediately
+rather than at a release.** Everything else batches until they next ask.
+
+Two things they rely on that are easy to break without noticing: the `queue:`
+first line, and renaming an extension-less file — `tasks-ready` and `tasks-board`
+have no extension, so `.gitattributes` pins them by name, and a rename silently
+un-pins the copy in any repo that vendors them. Treat a rename as breaking.
 
 ## How the parsers work
 

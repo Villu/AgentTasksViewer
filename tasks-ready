@@ -33,13 +33,20 @@
 #
 # Either way the first line of the output names what was read.
 #
+# --working-copy is the opt-out, and it exists because a wrapper should be able to
+# default --ref on. The last of the two wins, so `--ref origin/main` from a script
+# and --working-copy from the person running it does what the person meant. It is
+# one explicit token rather than an inferred absence: "drop --ref" is a rule
+# somebody has to have been told.
+#
 # Usage:
-#   tasks-ready [--all] [--file PATH] [--ref REF]
-#     --all   also list what is blocked or contested, and the reason for each
-#     --file  task file to read (default: ./TASKS.md, or $TASKS_FILE).
-#             Repo-relative when --ref is given.
-#     --ref   read the file from a git ref instead of the working copy,
-#             e.g. --ref origin/main
+#   tasks-ready [--all] [--file PATH] [--ref REF | --working-copy]
+#     --all            also list what is blocked or contested, and why for each
+#     --file           task file to read (default: ./TASKS.md, or $TASKS_FILE).
+#                      Repo-relative when --ref is in effect.
+#     --ref            read the file from a git ref instead of the working copy,
+#                      e.g. --ref origin/main
+#     --working-copy   read this checkout, cancelling an earlier --ref
 set -euo pipefail
 
 FILE="${TASKS_FILE:-TASKS.md}"
@@ -51,6 +58,9 @@ while [ $# -gt 0 ]; do
     --all)  ALL="--all"; shift ;;
     --file) FILE="${2:?--file needs a path}"; shift 2 ;;
     --ref)  REF="${2:?--ref needs a git ref}"; shift 2 ;;
+    # Last one wins rather than a conflict: the point is that a wrapper can put
+    # --ref in front of the caller's arguments and the caller can still say no.
+    --working-copy) REF=""; shift ;;
     # To the first line that is not a comment, rather than to a line number: the
     # number was 24 against a header that had grown to 26, so --help printed
     # `set -euo pipefail` at the end of it. A range that has to be maintained by
@@ -79,9 +89,34 @@ if [ -n "$REF" ]; then
   # No fallback to the working copy, deliberately. Falling back would answer the
   # question that was not asked, in the direction that costs the most: a listing
   # that looks like the fleet's queue and is actually one checkout's.
+  # Name what was tried, not just what failed. A refusal reading only "no such
+  # git ref: origin/main" cannot be told apart from a broken queue by somebody
+  # meeting it on a fresh box, and this is the command run before assigning work —
+  # so it says which remote and branch it went for, whether that remote is even
+  # configured, and how to ask for the working copy on purpose.
   if ! git rev-parse --verify --quiet "$REF" >/dev/null; then
     echo "no such git ref: $REF" >&2
-    [ -n "$FETCH_FAILED" ] && echo "(fetching it failed too, so it may be a remote this machine cannot reach)" >&2
+    case "$REF" in
+      */*)
+        remote="${REF%%/*}"; branch="${REF#*/}"
+        if git remote get-url "$remote" >/dev/null 2>&1; then
+          if [ -n "$FETCH_FAILED" ]; then
+            echo "  fetching branch '$branch' from remote '$remote' failed, and no such" >&2
+            echo "  ref is present locally either — unreachable remote, or no such branch" >&2
+          else
+            echo "  remote '$remote' is configured and was fetched, so it has no branch '$branch'" >&2
+          fi
+        else
+          echo "  this repository has no remote called '$remote'" >&2
+          if [ -n "$(git remote)" ]; then
+            echo "  remotes it does have: $(git remote | tr '\n' ' ' | sed 's/ $//')" >&2
+          else
+            echo "  it has no remotes configured at all" >&2
+          fi
+        fi
+        ;;
+    esac
+    echo "  to read this checkout on purpose instead, pass --working-copy" >&2
     exit 1
   fi
 
