@@ -69,6 +69,29 @@ Two priority loops used to disagree — `tasks-board.awk` iterated `P0..P3` whil
 dropped from the cards. Both now go to `P9`. A fixture with `P4` and `P7` is the
 cheapest way to catch a reintroduction.
 
+## `--ref` on both tools
+
+Both read a git ref instead of the working copy, and in both `--file` becomes
+repo-relative under it. They differ where their jobs differ, and the difference is
+deliberate — do not "unify" it:
+
+- **`tasks-board` swallows fetch failures** and renders the last ref it can reach.
+  A board that stops updating because the network blinked is worse than one
+  showing a slightly old queue, and the page names its ref either way.
+- **`tasks-ready` refuses.** An unresolvable ref or a missing file at that ref is
+  an error with a non-zero exit, and it never falls back to the working copy — a
+  one-shot answer used to assign work must not quietly answer a different
+  question. A fetch that fails while the ref still resolves is the one middle
+  case: stderr warning, `— FETCH FAILED, may be behind` appended to the source
+  line, exit 0.
+
+Resolve the ref **before** complaining about a failed fetch. A typo'd ref also
+fails to fetch, and warning about staleness first puts a true statement about the
+wrong thing above the real error.
+
+Every `tasks-ready` run prints `queue: <source>` as its first line. Anything
+parsing that output sees it, so treat it as part of the interface.
+
 ## How the parsers work
 
 Both are line-oriented awk over the markdown, with no lookahead:

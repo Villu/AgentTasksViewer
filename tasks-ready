@@ -20,19 +20,37 @@
 # Files, and a **Blocked by** naming it counts as met. tasks-board.awk implements
 # the same rules — change one, change the other in the same commit.
 #
+# **Use --ref when more than one machine writes the queue.** Without it this reads
+# your working copy, and `./TASKS.md` names a different file in every checkout and
+# every worktree — so a task somebody finished and pushed is still offered here as
+# ready, silently, with nothing in the output to suggest the answer is behind.
+# That is the expensive direction to be wrong in: this is the command run before
+# assigning work, so a stale answer hands somebody a task that is already done.
+#
+# With --ref, --file is a path inside the repository, a remote ref is fetched
+# first, and there is no fallback to the working copy — an unreadable ref is an
+# error, because a stale answer that looks current is the thing being fixed.
+#
+# Either way the first line of the output names what was read.
+#
 # Usage:
-#   tasks-ready [--all] [--file PATH]
+#   tasks-ready [--all] [--file PATH] [--ref REF]
 #     --all   also list what is blocked or contested, and the reason for each
-#     --file  task file to read (default: ./TASKS.md, or $TASKS_FILE)
+#     --file  task file to read (default: ./TASKS.md, or $TASKS_FILE).
+#             Repo-relative when --ref is given.
+#     --ref   read the file from a git ref instead of the working copy,
+#             e.g. --ref origin/main
 set -euo pipefail
 
 FILE="${TASKS_FILE:-TASKS.md}"
 ALL=""
+REF=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --all)  ALL="--all"; shift ;;
     --file) FILE="${2:?--file needs a path}"; shift 2 ;;
+    --ref)  REF="${2:?--ref needs a git ref}"; shift 2 ;;
     # To the first line that is not a comment, rather than to a line number: the
     # number was 24 against a header that had grown to 26, so --help printed
     # `set -euo pipefail` at the end of it. A range that has to be maintained by
@@ -42,9 +60,53 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ -f "$FILE" ] || { echo "no task file at $FILE" >&2; exit 1; }
+if [ -n "$REF" ]; then
+  git rev-parse --git-dir >/dev/null 2>&1 || {
+    echo "--ref needs to run inside a git repository" >&2; exit 1; }
 
-awk -v show_all="$ALL" '
+  # Fetch before reading. A remote ref is only as current as the last fetch, and
+  # answering from a ref nobody has updated is the same stale answer in a costume.
+  FETCH_FAILED=""
+  case "$REF" in
+    */*) git fetch -q "${REF%%/*}" "${REF#*/}" 2>/dev/null || FETCH_FAILED=1 ;;
+  esac
+
+  # Resolve before complaining about the fetch. A typo'd ref fails to fetch too,
+  # and warning about staleness first would put the wrong explanation above the
+  # real one — the failure mode this repo keeps meeting, where the message is
+  # accurate about something nobody asked.
+  #
+  # No fallback to the working copy, deliberately. Falling back would answer the
+  # question that was not asked, in the direction that costs the most: a listing
+  # that looks like the fleet's queue and is actually one checkout's.
+  if ! git rev-parse --verify --quiet "$REF" >/dev/null; then
+    echo "no such git ref: $REF" >&2
+    [ -n "$FETCH_FAILED" ] && echo "(fetching it failed too, so it may be a remote this machine cannot reach)" >&2
+    exit 1
+  fi
+
+  STALE=""
+  if [ -n "$FETCH_FAILED" ]; then
+    STALE=" — FETCH FAILED, may be behind"
+    echo "warning: could not fetch $REF; answering from the last copy this" >&2
+    echo "         machine has, which may be behind the remote" >&2
+  fi
+  git cat-file -e "$REF:$FILE" 2>/dev/null || {
+    echo "$REF has no file at $FILE (--file is repo-relative when --ref is used)" >&2
+    exit 1; }
+
+  SOURCE="$REF:$FILE$STALE"
+  SRC="$(mktemp)"; trap 'rm -f "$SRC"' EXIT
+  git show "$REF:$FILE" > "$SRC"
+else
+  [ -f "$FILE" ] || { echo "no task file at $FILE" >&2; exit 1; }
+  # Named as a working copy rather than as a path, because the path is the part
+  # that looks unambiguous and is not: every worktree has its own ./TASKS.md.
+  SOURCE="$FILE — your working copy, not the remote"
+  SRC="$FILE"
+fi
+
+awk -v show_all="$ALL" -v source="$SOURCE" '
 function strip(s) { gsub(/\r/, "", s); return s }
 
 /^## P[0-9]/     { prio = strip($2); next }
@@ -96,6 +158,8 @@ END {
         if (why == "") ready++
     }
 
+    print "queue: " source
+    print ""
     print "READY (" ready "):"
     for (p = 0; p <= 9; p++)
         for (i = 1; i <= n; i++)
@@ -114,4 +178,4 @@ END {
     if (dn) printf "\n%d tasks, %d completed\n", n - dn, dn
     else     printf "\n%d tasks\n", n
 }
-' "$FILE"
+' "$SRC"

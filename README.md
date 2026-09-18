@@ -50,6 +50,7 @@ Linux, macOS, Git Bash and WSL.
 ```bash
 tasks-ready                      # what can start now
 tasks-ready --all                # and what cannot, with the reason for each
+tasks-ready --ref origin/main    # the same, asked of the queue the fleet shares
 tasks-board                      # write ./tasks-board.html, once
 tasks-board --serve              # re-render on change AND serve it, so it stays current
 tasks-board --serve 9000         # the same on a port you choose (default 8787)
@@ -63,17 +64,40 @@ Leave the tab open and it reloads itself whenever the task file changes.
 
 Both default to `./TASKS.md`, overridable with `--file` or `$TASKS_FILE`.
 
-**Use `--ref` when more than one machine writes the queue.** Without it the board
-renders *your working copy*, so a claim somebody else pushed is invisible until you
-pull — and nothing on the page can tell you: it correctly reports that it matches
-the render it was given, while that render is of a stale file. It is the same
-mistake as the banner below, one level further out, and it is the more dangerous
-one, because a coordinator assigns work from what the board shows.
+**Use `--ref` when more than one machine writes the queue.** Both tools take it.
+Without it they read *your working copy*, so a claim somebody else pushed is
+invisible until you pull — and neither the page nor the listing can tell: each
+correctly reports what it was given, while what it was given is a stale file. It
+is the same mistake as the banner below, one level further out, and it is the more
+dangerous one, because work gets assigned from what these two show.
 
 ```bash
+tasks-ready --ref origin/main                    # ask the queue the fleet shares
 tasks-board --serve --ref origin/main            # track what the fleet sees
 tasks-board --serve --ref origin/main --file docs/TASKS.md
 ```
+
+On `tasks-ready` it matters more than on the board, because it is the command run
+*before assigning work*. Answering from a checkout that is a few commits behind
+offers a task that is already finished, already claimed, or waiting on a PR — and
+it does so silently. That is not hypothetical: a coordinator woke to a cleared
+context, ran the recovery recipe, and was handed a task whose PR was green and
+waiting for review, because the local `main` was three commits back. The script
+was not wrong about anything; it read a directory and said what was in it.
+
+`./TASKS.md` is the part that looks unambiguous and is not. Every worktree has
+one, so the path names a different file depending on where the shell happens to
+be standing. Hence the first line of every listing says what was read — either
+`queue: origin/main:TASKS.md` or `queue: TASKS.md — your working copy, not the
+remote`.
+
+With `--ref`, `tasks-ready` fetches the remote first and then **fails** if the ref
+or the file cannot be read. There is no falling back to the working copy: a
+fallback would answer a different question in the most expensive direction, which
+is the thing being fixed. If the fetch fails but the ref still resolves locally,
+it says so on stderr *and* in that first line — `— FETCH FAILED, may be behind` —
+and answers anyway, because offline is a reason to be told you might be behind,
+not a reason to get nothing.
 
 With `--ref`, `--file` is a path inside the repository rather than on disk, a
 remote ref is fetched before every check, and change detection is the file's blob
