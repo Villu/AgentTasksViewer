@@ -1,0 +1,5 @@
+# Shell and awk run on Linux; never hand them CRLF.
+*.sh    text eol=lf
+*.awk   text eol=lf
+tasks-ready  text eol=lf
+tasks-board  text eol=lf

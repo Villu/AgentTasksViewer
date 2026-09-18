@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# tasks-board — render a markdown task file as a self-contained HTML board.
+#
+# The output is generated and never authoritative: the markdown file is the only
+# source of truth, and this is a view of it that can be deleted and regenerated
+# at any time. That is deliberate. A tracker with its own database becomes a
+# second source of truth, and then the two disagree and nobody can say which is
+# right. Gitignore the output.
+#
+# Usage:
+#   tasks-board [options]
+#     --file PATH       task file to read      (default: ./TASKS.md, or $TASKS_FILE)
+#     --out PATH        html to write          (default: ./tasks-board.html)
+#     --title TEXT      heading on the page    (default: the directory name)
+#     --watch [SECONDS] re-render whenever the file changes, and tell an open
+#                       page to refresh itself (default: 5)
+#
+# --watch polls the file's modification time rather than using a filesystem
+# watcher, so it behaves the same in bash, Git Bash, WSL and over ssh, and costs
+# one stat() per interval.
+set -euo pipefail
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+AWK="$HERE/tasks-board.awk"
+FILE="${TASKS_FILE:-TASKS.md}"
+OUT="tasks-board.html"
+TITLE=""
+WATCH=0
+EVERY=5
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --file)  FILE="${2:?--file needs a path}"; shift 2 ;;
+    --out)   OUT="${2:?--out needs a path}"; shift 2 ;;
+    --title) TITLE="${2:?--title needs text}"; shift 2 ;;
+    --watch) WATCH=1
+             case "${2:-}" in ''|--*) shift ;; *) EVERY="$2"; shift 2 ;; esac ;;
+    -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+
+[ -f "$FILE" ] || { echo "no task file at $FILE" >&2; exit 1; }
+[ -f "$AWK" ]  || { echo "tasks-board.awk not found beside $0" >&2; exit 1; }
+[ -n "$TITLE" ] || TITLE="$(basename "$(cd "$(dirname "$FILE")" && pwd)")"
+
+render() {
+  awk -v generated="$(date -u '+%Y-%m-%d %H:%M:%S UTC')" \
+      -v heading="$TITLE" \
+      -v refresh="$1" \
+      -f "$AWK" "$FILE" > "$OUT"
+}
+
+mtime() {
+  # GNU, BSD, then a portable fallback.
+  stat -c %Y "$FILE" 2>/dev/null \
+    || stat -f %m "$FILE" 2>/dev/null \
+    || ls -l --time-style=+%s "$FILE" 2>/dev/null | awk '{print $6}'
+}
+
+if [ "$WATCH" = "0" ]; then
+  render 0
+  echo "wrote $OUT"
+  exit 0
+fi
+
+render "$EVERY"
+echo "watching $FILE — open $OUT and leave it open; it refreshes every ${EVERY}s"
+echo "ctrl-c to stop"
+last="$(mtime)"
+while true; do
+  sleep "$EVERY"
+  now="$(mtime)"
+  if [ "$now" != "$last" ]; then
+    render "$EVERY"
+    echo "$(date -u '+%H:%M:%S') re-rendered"
+    last="$now"
+  fi
+done
