@@ -16,9 +16,26 @@
 #     --ref REF         read the file from a git ref instead of the working copy,
 #                       e.g. --ref origin/main. --file is then a repo-relative
 #                       path. A remote ref is fetched before each check.
+#     --closed [N]      add a section listing tasks finished by deleting their
+#                       block, read from the git log rather than from the file
+#                       (default: the 20 most recent). Off unless asked for.
+#     --closed-match P  the commit-subject prefix that marks a finish
+#                       (default: "Close "). Implies --closed.
 #     --watch [SECONDS] re-render whenever the source changes (default: 5)
 #     --serve [PORT]    --watch, and serve the board over http so it can actually
 #                       refresh itself (default: 8787). Needs python3.
+#
+# --closed exists because deleting a task's whole block is the recommended way to
+# finish one, which leaves a queue of only live work and nothing to look back at.
+# Those finishes are already recorded: each is a commit touching the task file.
+# The section is opt-in rather than on by default, because the commit convention
+# belongs to the repository and not to this tool — a board that assumed a prefix
+# would show an empty section to everyone who spells it differently, with nothing
+# to say why. Asking for it is what makes the default meaningful.
+#
+# It is a view of the log and says so: it reports how many it is showing out of
+# how many it found, and when the log cannot be read it leaves the section in
+# place with the reason rather than failing the render or quietly omitting it.
 #
 # Prefer --serve. A board opened as a file:// URL cannot fetch the stamp beside
 # it, so it cannot tell whether it is still current: it will say so on the page
@@ -48,6 +65,9 @@ WATCH=0
 SERVE=0
 EVERY=5
 PORT=8787
+CLOSED=0
+CLOSED_N=20
+CLOSED_MATCH="Close "
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -56,6 +76,9 @@ while [ $# -gt 0 ]; do
     --title) TITLE="${2:?--title needs text}"; shift 2 ;;
     --label) LABEL="${2:?--label needs text}"; shift 2 ;;
     --ref)   REF="${2:?--ref needs a git ref}"; shift 2 ;;
+    --closed) CLOSED=1
+             case "${2:-}" in ''|--*) shift ;; *) CLOSED_N="$2"; shift 2 ;; esac ;;
+    --closed-match) CLOSED_MATCH="${2:?--closed-match needs a prefix}"; CLOSED=1; shift 2 ;;
     --watch) WATCH=1
              case "${2:-}" in ''|--*) shift ;; *) EVERY="$2"; shift 2 ;; esac ;;
     --serve) WATCH=1; SERVE=1
@@ -67,6 +90,14 @@ done
 
 [ -f "$AWK" ] || { echo "tasks-board.awk not found beside $0" >&2; exit 1; }
 
+# One cleanup for every temp this makes, installed once. Two traps each removing
+# their own file is how one of them ends up outliving a --serve that was ctrl-c'd.
+cleanup() {
+  [ -z "${TMP:-}" ]         || rm -f "$TMP"
+  [ -z "${CLOSED_FILE:-}" ] || rm -f "$CLOSED_FILE" "$CLOSED_FILE.all"
+}
+trap cleanup EXIT
+
 TMP=""
 if [ -n "$REF" ]; then
   git rev-parse --git-dir >/dev/null 2>&1 || {
@@ -77,7 +108,7 @@ if [ -n "$REF" ]; then
     echo "$REF has no file at $FILE (--file is repo-relative when --ref is used)" >&2
     exit 1; }
   SOURCE="$REF:$FILE"
-  TMP="$(mktemp)"; trap 'rm -f "$TMP"' EXIT
+  TMP="$(mktemp)"
   [ -n "$TITLE" ] || TITLE="$(basename "$(git rev-parse --show-toplevel)")"
 else
   [ -f "$FILE" ] || { echo "no task file at $FILE" >&2; exit 1; }
@@ -110,6 +141,56 @@ version() {
   fi
 }
 
+# Finishes read out of the log, for --closed. Everything here fails soft: a
+# shallow clone, a --file outside a repository or a git that refuses for any
+# reason leaves the section saying why, because a section that cannot be built is
+# not a reason to lose the queue above it. Recollected on every render, so a watch
+# picks up new closes — a close commit touches the task file, which is what the
+# watch is already keyed on.
+CLOSED_TOTAL=0
+CLOSED_SHOWN=0
+CLOSED_WHY=""
+CLOSED_FILE=""
+if [ "$CLOSED" = "1" ]; then CLOSED_FILE="$(mktemp)"; fi
+
+collect_closed() {
+  [ "$CLOSED" = "1" ] || return 0
+  CLOSED_TOTAL=0; CLOSED_SHOWN=0; CLOSED_WHY=""
+  : > "$CLOSED_FILE"
+
+  if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    CLOSED_WHY="not inside a git repository"; return 0
+  fi
+
+  local rev raw
+  if [ -n "$REF" ]; then rev="$REF"; else rev="HEAD"; fi
+  if ! git rev-parse --verify --quiet "$rev" >/dev/null; then
+    CLOSED_WHY="$rev does not resolve, so there is no history to read"; return 0
+  fi
+
+  # -F so the prefix is matched literally: it is user-supplied, and a regex
+  # metacharacter in somebody's convention should not become a silent filter.
+  # --grep only narrows — it matches anywhere in the message, so the prefix is
+  # then checked against the subject itself below.
+  if ! raw="$(git log "$rev" -F --grep="$CLOSED_MATCH" \
+                --format='%h%x09%cs%x09%s' -- "$FILE" 2>/dev/null)"; then
+    CLOSED_WHY="git log could not read the history of $FILE"; return 0
+  fi
+
+  printf '%s\n' "$raw" \
+    | awk -v pre="$CLOSED_MATCH" 'index($0, "\t") > 0 {
+        s = $0
+        p = index(s, "\t"); s = substr(s, p + 1)
+        p = index(s, "\t"); subj = substr(s, p + 1)
+        if (index(subj, pre) == 1) print
+      }' > "$CLOSED_FILE.all"
+
+  CLOSED_TOTAL="$(awk 'END {print NR + 0}' "$CLOSED_FILE.all")"
+  head -n "$CLOSED_N" "$CLOSED_FILE.all" > "$CLOSED_FILE"
+  CLOSED_SHOWN="$(awk 'END {print NR + 0}' "$CLOSED_FILE")"
+  rm -f "$CLOSED_FILE.all"
+}
+
 render() {
   # `local ts`, not `now`: the watch loop below keeps the source's version in
   # `now`, and a global assignment here would land this epoch in `last` after a
@@ -122,6 +203,7 @@ render() {
   local ts src
   ts="$(date -u +%s)"
   if [ -n "$REF" ]; then git show "$REF:$FILE" > "$TMP"; src="$TMP"; else src="$FILE"; fi
+  collect_closed
   awk -v generated="$(date -u '+%Y-%m-%d %H:%M:%S UTC')" \
       -v heading="$TITLE" \
       -v label="$LABEL" \
@@ -129,6 +211,12 @@ render() {
       -v refresh="$1" \
       -v epoch="$ts" \
       -v stamp="$(basename "$STAMP")" \
+      -v closed_on="$CLOSED" \
+      -v closed_file="$CLOSED_FILE" \
+      -v closed_match="$CLOSED_MATCH" \
+      -v closed_total="$CLOSED_TOTAL" \
+      -v closed_shown="$CLOSED_SHOWN" \
+      -v closed_why="$CLOSED_WHY" \
       -f "$AWK" "$src" > "$OUT"
   printf '%s\n' "$ts" > "$STAMP"
 }
@@ -158,7 +246,7 @@ if [ "$SERVE" = "1" ]; then
     DIR="$(cd "$(dirname "$OUT")" && pwd)"
     "$PY" -m http.server "$PORT" --bind 127.0.0.1 --directory "$DIR" >/dev/null 2>&1 &
     SRV=$!
-    trap 'kill "$SRV" 2>/dev/null || true; rm -f "$TMP"' EXIT INT TERM
+    trap 'kill "$SRV" 2>/dev/null || true; cleanup' EXIT INT TERM
     echo "open http://127.0.0.1:$PORT/$(basename "$OUT")"
   else
     SERVE=0

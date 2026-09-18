@@ -226,6 +226,39 @@ Completed tasks are left out of the four counts and the priority bars. Those exi
 to answer what to do next, and a finished task is not a candidate; a "done" tile
 would only ever grow.
 
+### Seeing what got finished, when finishing means deleting
+
+Deleting a task's whole block is the recommended way to finish one, and it leaves
+a queue of only live work with nothing to look back at. `--closed` adds a section
+built from the git log instead of from the file:
+
+```bash
+tasks-board --closed                       # the 20 most recent, from `Close <id>: ...`
+tasks-board --closed 50                    # more of them
+tasks-board --closed-match "Done "         # a different commit convention
+```
+
+It reads commits that touch the task file whose subject starts with the prefix,
+and shows the id, the text, the date and the sha. `--ref` applies here too: with
+it the section is the history of that ref.
+
+**It is off unless you ask for it, and that is the point.** `Close <id>:` is a
+convention some repositories have and this tool does not own. A board that assumed
+it would show an empty "Completed" section to everyone who spells it differently,
+with nothing to say why — so the prefix is configurable, the default is
+documented, and when nothing matches the section says which prefix it looked for
+rather than just showing nothing.
+
+**It never claims to be the whole list.** The heading reads `Closed recently (20
+of 63)` when it is truncated and `(25)` when it is not, with a line under it
+saying so. A section headed "Completed" that silently shows a third of them is a
+view asserting something it has not checked, which is the mistake the freshness
+banner already taught this tool once.
+
+**It cannot take the board down.** Outside a git repository, on a ref that does
+not resolve, or when `git log` refuses for any reason, the section stays and names
+the reason; the queue above it is rendered from the task file and is unaffected.
+
 The theme button beside the title cycles **System, Light, Dark**, and the choice
 is remembered across sessions. System is the default and stays reachable, so one
 click on a laptop that happened to be in dark mode does not pin you to it. The

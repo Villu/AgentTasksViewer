@@ -149,6 +149,33 @@ in the same order. `cnt["done"]` is assigned after the state loop rather than
 accumulated in it, because done tasks `continue` before the counting line so they
 stay out of the stat tiles and the priority bars.
 
+## `--closed` reads a second source
+
+Every other section on the board comes from the task file. `--closed` comes from
+the **git log** — commits touching the task file whose subject starts with
+`--closed-match` (default `Close `). It is the only place the tool reads a repo
+convention, so three rules hold it in check, and all three are load-bearing:
+
+1. **Opt-in.** No `--closed`, no section, no git call. The convention belongs to
+   the consuming repository; defaulting it on would show an empty section to
+   everyone who spells finishing differently.
+2. **It states its own truncation.** `(20 of 63)` in the heading and a note under
+   the rows. A "Completed" heading over a truncated list asserts something it has
+   not checked — the same family as the liveness banner this tool already fixed.
+3. **It fails soft.** `collect_closed` never exits non-zero: no repo, an
+   unresolvable rev, or a `git log` that refuses sets `CLOSED_WHY`, and the
+   section renders that reason instead of rows. The queue above comes from the
+   file and must still render.
+
+The prefix is matched with `git log -F --grep` (literal, since it is user text)
+and then re-checked against the *subject* in awk, because `--grep` matches
+anywhere in the message. Rows are split by hand on the first two tabs rather than
+with `split()`, since a subject may contain one.
+
+Closed rows are `div.card.closed`, not `<details>` — there is nothing to expand,
+and a card that opens to nothing is worse than a row. The storage script only
+looks at `details.card`, so they are skipped by it automatically.
+
 ## The page's three scripts
 
 They are separate on purpose, and each one's failure has to be survivable by the

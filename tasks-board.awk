@@ -188,6 +188,9 @@ END {
     print ".card.held{border-left-color:var(--held)}"
     print ".card.contested{border-left-color:var(--contested)}"
     print ".card.done{border-left-color:var(--dim)}"
+    print ".card.closed{border-left-color:var(--dim);padding:11px 14px}"
+    print ".card.closed .ct{color:var(--dim);margin-bottom:2px}"
+    print ".note{font-size:12.5px;color:var(--dim);line-height:1.5;padding:2px 2px 4px}"
     print ".card.done .ct{color:var(--dim)}"
     print ".ct{font-weight:550;margin-bottom:3px}"
     print ".no{display:inline-block;min-width:1.9em;color:var(--dim);font-weight:600;"
@@ -262,6 +265,49 @@ END {
             for (j = 1; j <= fn[i]; j++)
                 printf "<div class=\"f\"><div class=\"fl\">%s</div><div class=\"fv\">%s</div></div>\n", esc(flab[i, j]), md(ftxt[i, j])
             print "</div></details>"
+        }
+        print "</div></section>"
+    }
+
+    # Closed tasks come from the git log, not from the file — the block is gone,
+    # which is the point of deleting it. So this section is a view of a different
+    # source than everything above it, and it says how much of that source it is
+    # showing: "20 of 63" rather than a bare "20" that reads as all of them.
+    if (closed_on + 0) {
+        print "<section class=\"sec\" data-sec=\"closed\">"
+        printf "<h2 tabindex=\"0\" role=\"button\" aria-expanded=\"true\">"
+        printf "<span class=\"caret\">&#9654;</span>Closed recently "
+        if (closed_why != "")
+            printf "<span class=\"n\">(unavailable)</span>"
+        else if (closed_shown + 0 < closed_total + 0)
+            printf "<span class=\"n\">(%d of %d)</span>", closed_shown, closed_total
+        else
+            printf "<span class=\"n\">(%d)</span>", closed_shown
+        print "</h2>"
+        print "<div class=\"cards\">"
+
+        if (closed_why != "") {
+            printf "<div class=\"note\">Not shown: %s. Everything above is unaffected &mdash; it comes from the task file, which was read.</div>\n", esc(closed_why)
+        } else if (closed_shown + 0 == 0) {
+            printf "<div class=\"note\">No commit touching the task file has a subject starting <code>%s</code>. That is the prefix this board was told to look for, not a rule &mdash; pass <code>--closed-match</code> to change it.</div>\n", esc(closed_match)
+        } else {
+            while ((getline cl < closed_file) > 0) {
+                # Split by hand rather than with split(): a commit subject may
+                # contain the separator, and only the first two fields are fixed.
+                q = index(cl, "\t"); csha = substr(cl, 1, q - 1); cl = substr(cl, q + 1)
+                q = index(cl, "\t"); cdate = substr(cl, 1, q - 1); csub = substr(cl, q + 1)
+                ctext = substr(csub, length(closed_match) + 1)
+                cid = ""
+                q = index(ctext, ":")
+                if (q > 0) { cid = substr(ctext, 1, q - 1); ctext = substr(ctext, q + 2) }
+                num++
+                printf "<div class=\"card closed\"><div class=\"ct\"><span class=\"no\">%d</span>%s</div><div class=\"cm\">", num, esc(ctext)
+                if (cid != "") printf "<span class=\"id\">%s</span>", esc(cid)
+                printf "<span>%s</span><span class=\"id\">%s</span></div></div>\n", esc(cdate), esc(csha)
+            }
+            close(closed_file)
+            if (closed_shown + 0 < closed_total + 0)
+                printf "<div class=\"note\">The %d most recent of %d. This list is truncated, not complete &mdash; <code>--closed N</code> shows more.</div>\n", closed_shown, closed_total
         }
         print "</div></section>"
     }
