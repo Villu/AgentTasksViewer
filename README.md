@@ -184,6 +184,12 @@ by indented `- **Field**: value` lines.
 Only the checkbox line and `**ID**` are required. Everything else is optional, and
 unknown fields are ignored rather than rejected, so the file stays yours.
 
+**A field is its marker at the start of a line, never the marker anywhere in one.**
+So you can write about the format inside the queue — `- **Note**: for example
+**Blocked by**: other-task is how you write it` is a Note, not a dependency. There
+is no escaping in this format, so putting a marker in prose is the only way to
+mention a field, and it has to be safe.
+
 Priorities are any `## P<n>`, from `P0` to `P9`, and `P0` sorts first.
 
 **Two ways to finish a task, and they mean the same thing.** Delete the block, or

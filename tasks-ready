@@ -152,10 +152,23 @@ function strip(s) { gsub(/\r/, "", s); return s }
     if (match(line, /\(@[^)]+\)[ \t]*$/)) actor[n] = substr(line, RSTART + 2, RLENGTH - 3)
     next
 }
-/\*\*ID\*\*:/         { id[n] = strip($NF); byid[id[n]] = n; next }
-/\*\*Files\*\*:/      { files[n] = strip($0); next }
-/\*\*Blocked by\*\*:/ { sub(/^.*\*\*Blocked by\*\*:[ \t]*/, ""); dep[n] = strip($0); next }
-/\*\*Blocked\*\*:/    { sub(/^.*\*\*Blocked\*\*:[ \t]*/, "");    blk[n] = strip($0); next }
+# A field is its marker at the START of the line, never the marker anywhere in it.
+# The format has no escaping, so the only way to write *about* a field is to put
+# its marker in a line — and documenting the format inside the queue is a normal
+# thing to do. Unanchored, `- **Note**: for example **Blocked by**: other-task`
+# was read as a Blocked by, and with the greedy `^.*` the value taken came from
+# the LAST marker on the line, so the Note silently replaced a real dependency
+# and the task was offered as ready with its blocker still open.
+#
+# Anchoring is preferred over adding a **Note** rule that shadows these, because
+# the same swallow applied to **ID** — a Note quoting `**ID**:` renamed the task,
+# which breaks every **Blocked by** pointing at it — and to any field this program
+# does not know about. A shadowing rule fixes the instance; the anchor fixes the
+# class. The bullet is optional so a file that writes `  **ID**: x` still parses.
+/^[ \t]*-?[ \t]*\*\*ID\*\*:/         { id[n] = strip($NF); byid[id[n]] = n; next }
+/^[ \t]*-?[ \t]*\*\*Files\*\*:/      { files[n] = strip($0); next }
+/^[ \t]*-?[ \t]*\*\*Blocked by\*\*:/ { sub(/^[ \t]*-?[ \t]*\*\*Blocked by\*\*:[ \t]*/, ""); dep[n] = strip($0); next }
+/^[ \t]*-?[ \t]*\*\*Blocked\*\*:/    { sub(/^[ \t]*-?[ \t]*\*\*Blocked\*\*:[ \t]*/, "");    blk[n] = strip($0); next }
 
 END {
     for (i = 1; i <= n; i++) {

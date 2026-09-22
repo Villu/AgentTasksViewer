@@ -73,15 +73,24 @@ function addfield(i, label, text) {
     title[n] = substr(line, 7)
     next
 }
-/\*\*ID\*\*:/         { id[n] = strip($NF); byid[id[n]] = n; next }
-/\*\*Files\*\*:/      { files[n] = strip($0)
-                        t = strip($0); sub(/^.*\*\*Files\*\*:[ \t]*/, "", t); addfield(n, "Files", t); next }
-/\*\*Details\*\*:/    { t = strip($0); sub(/^.*\*\*Details\*\*:[ \t]*/, "", t);    addfield(n, "Details", t); next }
-/\*\*Acceptance\*\*:/ { t = strip($0); sub(/^.*\*\*Acceptance\*\*:[ \t]*/, "", t); addfield(n, "Acceptance", t); next }
-/\*\*Note\*\*:/       { t = strip($0); sub(/^.*\*\*Note\*\*:[ \t]*/, "", t);       addfield(n, "Note", t); next }
-/\*\*Blocked by\*\*:/ { t = strip($0); sub(/^.*\*\*Blocked by\*\*:[ \t]*/, "", t); dep[n] = t; addfield(n, "Blocked by", t); next }
-/\*\*Blocked\*\*:/    { t = strip($0); sub(/^.*\*\*Blocked\*\*:[ \t]*/, "", t);    blk[n] = t; addfield(n, "Blocked", t); next }
-/\*\*Tags\*\*:/       { t = strip($0); sub(/^.*\*\*Tags\*\*:[ \t]*/, "", t);       tags[n] = t; next }
+# A field is its marker at the START of the line. See the same block in
+# tasks-ready for why — briefly: the format has no escaping, so writing about a
+# field means putting its marker in a line, and unanchored patterns then read that
+# line as the field. This file looked immune because Details, Acceptance and Note
+# are declared above Blocked by and take the line first, but that was declaration
+# order rather than a rule: **Tags** is declared below, so a Tags line quoting
+# `**Blocked by**:` was read as a dependency here too. The greedy `^.*` was a
+# second bug of its own — a legitimate value containing its own marker again was
+# truncated to whatever followed the last one.
+/^[ \t]*-?[ \t]*\*\*ID\*\*:/         { id[n] = strip($NF); byid[id[n]] = n; next }
+/^[ \t]*-?[ \t]*\*\*Files\*\*:/      { files[n] = strip($0)
+                        t = strip($0); sub(/^[ \t]*-?[ \t]*\*\*Files\*\*:[ \t]*/, "", t); addfield(n, "Files", t); next }
+/^[ \t]*-?[ \t]*\*\*Details\*\*:/    { t = strip($0); sub(/^[ \t]*-?[ \t]*\*\*Details\*\*:[ \t]*/, "", t);    addfield(n, "Details", t); next }
+/^[ \t]*-?[ \t]*\*\*Acceptance\*\*:/ { t = strip($0); sub(/^[ \t]*-?[ \t]*\*\*Acceptance\*\*:[ \t]*/, "", t); addfield(n, "Acceptance", t); next }
+/^[ \t]*-?[ \t]*\*\*Note\*\*:/       { t = strip($0); sub(/^[ \t]*-?[ \t]*\*\*Note\*\*:[ \t]*/, "", t);       addfield(n, "Note", t); next }
+/^[ \t]*-?[ \t]*\*\*Blocked by\*\*:/ { t = strip($0); sub(/^[ \t]*-?[ \t]*\*\*Blocked by\*\*:[ \t]*/, "", t); dep[n] = t; addfield(n, "Blocked by", t); next }
+/^[ \t]*-?[ \t]*\*\*Blocked\*\*:/    { t = strip($0); sub(/^[ \t]*-?[ \t]*\*\*Blocked\*\*:[ \t]*/, "", t);    blk[n] = t; addfield(n, "Blocked", t); next }
+/^[ \t]*-?[ \t]*\*\*Tags\*\*:/       { t = strip($0); sub(/^[ \t]*-?[ \t]*\*\*Tags\*\*:[ \t]*/, "", t);       tags[n] = t; next }
 
 END {
     for (i = 1; i <= n; i++) {

@@ -133,9 +133,24 @@ Both are line-oriented awk over the markdown, with no lookahead:
   the two ways to record that it finished.
 - `fin[n]` is `substr(line, 4, 1) == "x"` — the character inside the brackets of
   `- [x] `. It is read off the already-`strip()`ped line, so a CRLF file is fine.
-- Order matters in the rule list: `/\*\*Blocked by\*\*:/` must precede
-  `/\*\*Blocked\*\*:/`, because the latter's regex also matches a "Blocked by"
-  line. Both use `next`.
+- **Every field pattern is anchored**: `/^[ \t]*-?[ \t]*\*\*Field\*\*:/`, and the
+  `sub()` that strips the prefix uses the same anchor rather than a greedy `^.*`.
+  The format has no escaping, so the only way to write *about* a field is to put
+  its marker in a line — and documenting the format inside the queue is a normal
+  thing to do. Unanchored, `- **Note**: for example **Blocked by**: other-task`
+  was read as a dependency, and the greedy strip took the value after the *last*
+  marker, so a Note silently replaced a real `**Blocked by**` and the task was
+  offered as ready with its blocker open. The same swallow hit `**ID**`, renaming
+  a task and breaking every `**Blocked by**` aimed at it. Do not "simplify" the
+  anchors away, and do not fix a recurrence by adding a shadowing rule for
+  whichever field was quoted — that fixes the instance, the anchor fixes the class.
+- Rule order is no longer load-bearing. `/\*\*Blocked by\*\*:/` used to have to
+  precede `/\*\*Blocked\*\*:/`, because unanchored the latter also matched a
+  "Blocked by" line; anchored, `**Blocked**:` cannot match `**Blocked by**:` at
+  all. The order is kept because it reads well, not because anything rests on it.
+  The board's apparent immunity to the Note case was the same accident — Details,
+  Acceptance and Note are declared above `Blocked by` and took the line first,
+  while `Tags` is declared below and did not.
 
 `tasks-ready` reduces to ready / not-ready-with-a-reason, and leaves done tasks
 out of both lists with a `N tasks, M completed` trailer. `tasks-board.awk`
