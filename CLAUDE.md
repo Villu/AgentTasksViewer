@@ -51,8 +51,8 @@ like your board failing to render.
 The three-rule readiness check is implemented **twice**: in the `END` block of the
 inline awk inside `tasks-ready`, and in the `END` block of `tasks-board.awk`.
 Both build the same `held[path] -> id` map from claimed tasks' `**Files**`, and
-both resolve `**Blocked by**` by asking whether the id is still `in byid` and not
-done.
+both resolve `**Blocked by**` by asking whether the id is still `in open_id` —
+that is, whether any unfinished block declares it.
 
 **If you change one, change the other in the same commit.** This is stated at the
 top of `tasks-board.awk` and in the README, and it is the only thing in the repo
@@ -124,13 +124,23 @@ Both are line-oriented awk over the markdown, with no lookahead:
   There is no block terminator — a field line belongs to whatever checkbox came
   last, so a stray field before the first task writes to index 0.
 - `**ID**` is taken as `$NF` (last whitespace-separated field), so an id cannot
-  contain a space. It populates `byid[id] = n`.
+  contain a space. **A block has one id: the first line that declares it**, and
+  later `**ID**` lines in the same block are ignored, because honouring them gave
+  the block a second key.
 - `**Files**` paths are extracted by repeatedly matching `` /`[^`]+`/ `` — only
   backticked paths count for rule 3. A path written without backticks is invisible
   to ownership checking.
-- Rule 2 is `(t in byid) && !fin[byid[t]]`: a dependency is unmet while its block
-  is still in the file *and* still unticked. Deleting the block and ticking it are
-  the two ways to record that it finished.
+- Rule 2 is `(t in open_id)`: an id is **open while any unfinished block declares
+  it**, and a dependency is unmet exactly while its id is open. Deleting the block
+  and ticking it are the two ways to record that it finished.
+
+  This replaced `(t in byid) && !fin[byid[t]]`, which keyed the answer to **one**
+  block — the last to declare the id — so the answer depended on where blocks sat
+  in the file. A finished block placed *after* a live one with the same id
+  reported the live work as done and offered its dependents; the same file with
+  the blocks swapped answered correctly. `open_id` is order-independent and fails
+  safe: met only when **every** block bearing that id is finished. There is no
+  `byid` any more — it had exactly one reader, this test.
 - `fin[n]` is `substr(line, 4, 1) == "x"` — the character inside the brackets of
   `- [x] `. It is read off the already-`strip()`ped line, so a CRLF file is fine.
 - **Every field pattern is anchored**: `/^[ \t]*-?[ \t]*\*\*Field\*\*:/`, and the
@@ -145,15 +155,18 @@ Both are line-oriented awk over the markdown, with no lookahead:
   quoted — that fixes the instance, the anchor fixes the class.
 - The same swallow reached two more fields, and the `**ID**` one is worth stating
   precisely because the obvious version of it is **not** what happens. A quoted
-  `**ID**:` renames the task in listings, but `byid` *accumulates* — the real id
-  was already inserted by the genuine line — so a dependency naming it still
-  resolves and is still correctly withheld. The damage is a **key collision**:
-  when the swallowed text matches *another* task's id, `byid[that id]` is
-  repointed at the wrong block, and everything read through it answers from the
-  wrong task. With the hijacking block `- [x]`, `fin[byid[dep]]` is then true and
-  a dependency on a real, open task counts as met. Demonstrated by trader's
-  worker; verified here at `0330c32`, where the dependent is offered while its
-  blocker is open.
+  `**ID**:` renames the task in listings, but the id map *accumulated* — the real
+  id was already inserted by the genuine line — so a dependency naming it still
+  resolved and was still correctly withheld. The damage was a **key collision**:
+  when the swallowed text matched *another* task's id, that id was repointed at
+  the wrong block and answered from it. Demonstrated by trader's worker; verified
+  at `0330c32`, where the dependent is offered while its blocker is open.
+
+  Anchoring closed the *quoted* route in `c583cee` and left the collision itself,
+  which needs no quoting at all: a block with two genuine `**ID**` lines still
+  answered to both. Reported by trader's coordinator against the vendored copy.
+  Both halves are now shut — one id per block, and `open_id` keyed on every block
+  declaring an id rather than on one of them.
 - A `**Blocked**` prose reason that mentions the other marker — `- **Blocked**:
   waiting on a rewrite of the **Blocked by**: convention` — was consumed by the
   `Blocked by` rule, so `blk` was never set and the prose became a dangling

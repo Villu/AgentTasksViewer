@@ -174,7 +174,7 @@ by indented `- **Field**: value` lines.
 |---|---|
 | `**ID**` | the handle; referenced by `**Blocked by**` |
 | `**Files**` | ownership. Backticked paths, and the basis of rule 3 |
-| `**Blocked by**` | comma-separated ids. Unmet while the id is still in the file and unticked |
+| `**Blocked by**` | comma-separated ids. Unmet while any unticked block still declares the id |
 | `**Blocked**` | prose reason, for what no task id can express — a person, a date, a decision |
 | `**Details**`, `**Acceptance**`, `**Note**` | shown when a card is expanded; repeatable |
 | `**Tags**` | shown on the card |

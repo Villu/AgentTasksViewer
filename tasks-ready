@@ -161,11 +161,30 @@ function strip(s) { gsub(/\r/, "", s); return s }
 # and the task was offered as ready with its blocker still open.
 #
 # Anchoring is preferred over adding a **Note** rule that shadows these, because
-# the same swallow applied to **ID** — a Note quoting `**ID**:` renamed the task,
-# which breaks every **Blocked by** pointing at it — and to any field this program
-# does not know about. A shadowing rule fixes the instance; the anchor fixes the
-# class. The bullet is optional so a file that writes `  **ID**: x` still parses.
-/^[ \t]*-?[ \t]*\*\*ID\*\*:/         { id[n] = strip($NF); byid[id[n]] = n; next }
+# the same swallow applied to **ID** — where it does not rename anything, it
+# collides: the quoted text becomes a second key for this block, and if it
+# matches the id of another task, that id now answers from the wrong block — and to
+# any field this program does not know about. A shadowing rule fixes the
+# instance; the anchor fixes the class. The bullet is optional so a file that
+# writes `  **ID**: x` still parses.
+#
+# A block has ONE id: the first line that declares it. A second **ID** line is
+# malformed, and honouring it was the collision above with no quoting needed.
+#
+# An id is OPEN while any unfinished block declares it, which is what a
+# **Blocked by** is asked about. Order-independent and fails safe in the
+# direction that matters: a dependency counts as met only when every block
+# bearing that id is finished. Keying on one block instead — the last to declare
+# the id — made the answer depend on where the blocks sat in the file, and a
+# finished block placed after a live one with the same id reported the live work
+# as done.
+/^[ \t]*-?[ \t]*\*\*ID\*\*:/ {
+    if (n in seenid) next
+    seenid[n] = 1
+    id[n] = strip($NF)
+    if (!fin[n]) open_id[id[n]] = 1
+    next
+}
 /^[ \t]*-?[ \t]*\*\*Files\*\*:/      { files[n] = strip($0); next }
 /^[ \t]*-?[ \t]*\*\*Blocked by\*\*:/ { sub(/^[ \t]*-?[ \t]*\*\*Blocked by\*\*:[ \t]*/, ""); dep[n] = strip($0); next }
 /^[ \t]*-?[ \t]*\*\*Blocked\*\*:/    { sub(/^[ \t]*-?[ \t]*\*\*Blocked\*\*:[ \t]*/, "");    blk[n] = strip($0); next }
@@ -190,7 +209,7 @@ END {
             split(dep[i], d, /,[ \t]*/)
             for (k in d) {
                 t = d[k]; gsub(/^[ \t]+|[ \t]+$/, "", t)
-                if (t != "" && (t in byid) && !fin[byid[t]])
+                if (t != "" && (t in open_id))
                     why = why (why ? ", " : "waits on ") t
             }
             if (why == "") {

@@ -82,7 +82,20 @@ function addfield(i, label, text) {
 # `**Blocked by**:` was read as a dependency here too. The greedy `^.*` was a
 # second bug of its own — a legitimate value containing its own marker again was
 # truncated to whatever followed the last one.
-/^[ \t]*-?[ \t]*\*\*ID\*\*:/         { id[n] = strip($NF); byid[id[n]] = n; next }
+# A block has ONE id: the first line that declares it. A second **ID** line is
+# malformed, and honouring it gave the block a second key — so a finished block
+# carrying another task's id made that task read as finished, and here it also
+# emitted two cards with the same DOM id, which the storage script restores by.
+#
+# An id is OPEN while any unfinished block declares it. See tasks-ready for the
+# argument; both implement it, so change them together.
+/^[ \t]*-?[ \t]*\*\*ID\*\*:/ {
+    if (n in seenid) next
+    seenid[n] = 1
+    id[n] = strip($NF)
+    if (!fin[n]) open_id[id[n]] = 1
+    next
+}
 /^[ \t]*-?[ \t]*\*\*Files\*\*:/      { files[n] = strip($0)
                         t = strip($0); sub(/^[ \t]*-?[ \t]*\*\*Files\*\*:[ \t]*/, "", t); addfield(n, "Files", t); next }
 /^[ \t]*-?[ \t]*\*\*Details\*\*:/    { t = strip($0); sub(/^[ \t]*-?[ \t]*\*\*Details\*\*:[ \t]*/, "", t);    addfield(n, "Details", t); next }
@@ -115,7 +128,7 @@ END {
             split(dep[i], d, /,[ \t]*/)
             for (k in d) {
                 t = d[k]; gsub(/^[ \t]+|[ \t]+$/, "", t)
-                if (t != "" && (t in byid) && !fin[byid[t]]) {
+                if (t != "" && (t in open_id)) {
                     state[i] = "blocked"
                     why[i] = why[i] (why[i] ? ", " : "waits on ") t
                 }
