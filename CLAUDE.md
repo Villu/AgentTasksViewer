@@ -140,10 +140,26 @@ Both are line-oriented awk over the markdown, with no lookahead:
   thing to do. Unanchored, `- **Note**: for example **Blocked by**: other-task`
   was read as a dependency, and the greedy strip took the value after the *last*
   marker, so a Note silently replaced a real `**Blocked by**` and the task was
-  offered as ready with its blocker open. The same swallow hit `**ID**`, renaming
-  a task and breaking every `**Blocked by**` aimed at it. Do not "simplify" the
-  anchors away, and do not fix a recurrence by adding a shadowing rule for
-  whichever field was quoted — that fixes the instance, the anchor fixes the class.
+  offered as ready with its blocker open. Do not "simplify" the anchors away, and
+  do not fix a recurrence by adding a shadowing rule for whichever field was
+  quoted — that fixes the instance, the anchor fixes the class.
+- The same swallow reached two more fields, and the `**ID**` one is worth stating
+  precisely because the obvious version of it is **not** what happens. A quoted
+  `**ID**:` renames the task in listings, but `byid` *accumulates* — the real id
+  was already inserted by the genuine line — so a dependency naming it still
+  resolves and is still correctly withheld. The damage is a **key collision**:
+  when the swallowed text matches *another* task's id, `byid[that id]` is
+  repointed at the wrong block, and everything read through it answers from the
+  wrong task. With the hijacking block `- [x]`, `fin[byid[dep]]` is then true and
+  a dependency on a real, open task counts as met. Demonstrated by trader's
+  worker; verified here at `0330c32`, where the dependent is offered while its
+  blocker is open.
+- A `**Blocked**` prose reason that mentions the other marker — `- **Blocked**:
+  waiting on a rewrite of the **Blocked by**: convention` — was consumed by the
+  `Blocked by` rule, so `blk` was never set and the prose became a dangling
+  dependency that resolved to nothing. The task was offered as ready with a
+  human-written block silently discarded, and it needs no `**Note**` at all: just
+  writing about the convention in a reason. Probably the likeliest way in.
 - Rule order is no longer load-bearing. `/\*\*Blocked by\*\*:/` used to have to
   precede `/\*\*Blocked\*\*:/`, because unanchored the latter also matched a
   "Blocked by" line; anchored, `**Blocked**:` cannot match `**Blocked by**:` at
