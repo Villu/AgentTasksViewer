@@ -1,49 +1,208 @@
 # AgentTasksViewer
 
-Two small tools for a task queue that lives in a markdown file — the arrangement
+A task queue that lives in a markdown file, and two views of it — the arrangement
 several coding agents can share without a database between them.
 
-- **`tasks-ready`** — what can be started right now, and why everything else cannot.
-- **`tasks-board`** — the same queue as a self-contained HTML page, with every task
-  expandable to its full text, and a `--watch` mode that keeps an open tab current.
+![The board in a sidebar beside Claude Code: the agent runs tasks-ready and assigns the free task, while the board shows the same queue](docs/board-in-sidebar.png)
 
-No database, no daemon, no server, no dependencies beyond `bash` and `awk`. The
-markdown file is the only source of truth and both tools are views of it.
+- **`tasks-board`** — the queue as a self-contained HTML page: counts, a bar per
+  priority, and one card per task that expands to its full text. `--serve` keeps an
+  open tab current, so it can sit in a sidebar next to the agents all day.
+- **`tasks-ready`** — the same answer for the agents: what can be started right now,
+  and why everything else cannot.
 
-## Why a file and not a tracker
+No database and no daemon. The dependencies are `bash` and `awk`, plus `python3`
+if you want the board served. The markdown file is the only source of truth and
+both tools are views of it: delete the HTML and regenerate it, and nothing is lost,
+because nothing lived there.
 
-This came out of running a coordinator plus worker agents against one repository,
-where the queue was a markdown file and claims were kept in an append-only event
-log with its own CLI. The log was removed after a night of measurement: **33 claims,
-and not one task was ever claimed by two agents.** It arbitrated nothing, because
-assignment settled ownership before any claim was written. What it did produce was
-ten distinct ways for a claim to fail while the terminal looked fine — a push
-reporting success having sent nothing, refusals exiting zero, one status word
-meaning two opposite things, state splitting between the log and the file in both
-directions, and a CI gate that turned out to be advisory so its green proved nothing.
-
-The lesson was not that tracking is bad. It was that **a second store drifts from
-the first, and then you have two answers and no way to say which is wrong.** The one
-capability worth keeping from the tooling was the query — "what is startable?" —
-which does not need a store at all. That is `tasks-ready`. `tasks-board` is the same
-answer for human eyes.
-
-So: generated, never authoritative. Delete the HTML and regenerate it; nothing is
-lost, because nothing lived there.
-
-## Install
+## Quick start
 
 ```bash
 git clone https://github.com/Villu/AgentTasksViewer.git
-cd AgentTasksViewer && chmod +x tasks-ready tasks-board
+cd AgentTasksViewer
+./tasks-board --serve --file examples/TASKS.md --title "Example queue"
 ```
 
-Put them on your `PATH`, or copy `tasks-ready`, `tasks-board` and `tasks-board.awk`
-into your repo's `ops/` or `scripts/`. `tasks-board` looks for `tasks-board.awk`
-beside itself.
+Open the URL it prints — `http://127.0.0.1:8787/tasks-board.html` — and edit
+`examples/TASKS.md`: the tab reloads itself within a few seconds. In another
+terminal, ask the question the agents ask:
 
-Requires `bash` and any POSIX `awk` (gawk, mawk and BusyBox awk all work). Tested on
-Linux, macOS, Git Bash and WSL.
+```bash
+./tasks-ready --file examples/TASKS.md --all
+```
+
+To use it on your own queue, put the three files on your `PATH`, or copy
+`tasks-board`, `tasks-board.awk` and `tasks-ready` into your repo's `ops/` or
+`scripts/`. `tasks-board` looks for `tasks-board.awk` beside itself. Both tools
+default to `./TASKS.md`, overridable with `--file` or `$TASKS_FILE`.
+
+Requires `bash` and any POSIX `awk` (gawk, mawk and BusyBox awk all work), and for
+`--serve` a working `python3`. Tested on Linux, macOS, Git Bash and WSL.
+
+## The board
+
+It is read mostly as a **sidebar beside Claude Code**, so it is laid out for a
+narrow pane first: at about 400 px the tiles go two by two, titles wrap, and nothing
+needs a wide screen. Run `tasks-board --serve` and open the URL in a pane next to
+the agent — an editor's built-in browser (in VS Code, *Simple Browser: Show*) or a
+browser window snapped to the side. It works just as well full width, or on a phone.
+
+<p>
+  <img src="docs/board-light.png" width="330" alt="The board at sidebar width, light theme: four count tiles, a bar per priority, and the in-progress and ready sections">
+  &nbsp;
+  <img src="docs/board-dark-open-card.png" width="330" alt="The board at sidebar width, dark theme: a card opened to its Details, Files, Acceptance and Note, above the blocked, completed and closed-recently sections">
+</p>
+
+*Left: the overview. Right: the dark theme with a card opened — a task nobody holds
+and nothing blocks, which is still not ready because a file it lists is held by
+another task. The queue in these screenshots is made up.*
+
+### What is on it
+
+Counts by state, a stacked bar per priority, and one card per task. Clicking a card
+expands it to the full `Details`, `Files`, `Acceptance` and `Notes`, with backticks
+and bold rendered — the whole block a worker would read, without opening the file.
+
+Sections run **In progress, Ready to start, Blocked by a file somebody holds,
+Blocked, Completed**. In progress is first because the coordinator's first question
+is who is on what, and completed is last because it is the only section nobody acts
+on. Clicking a section heading folds that section's task list away, and clicking
+again brings it back — which is how you get a long queue down to the part you are
+working on. It does not touch the cards themselves: expanding a card is what shows
+its `Details` and `Acceptance`, and one gesture cannot sensibly mean both. Which
+sections you folded survives a reload, keyed by section rather than by position, so
+a task moving from ready to held does not hand your folded state to a different
+section.
+
+Cards are numbered down the page. That is only a way to say "look at 7" out loud —
+the numbers shift as tasks change state, and `**ID**` is the handle that does not.
+The counter covers the sections read from the task file; **closed rows are not
+numbered**, because they come from the log and already carry an id and a sha that
+do not move. A number there would have been an index into a historical record
+that re-counted itself whenever an unrelated live task was finished.
+
+Completed tasks are left out of the four counts and the priority bars. Those exist
+to answer what to do next, and a finished task is not a candidate; a "done" tile
+would only ever grow.
+
+The theme button beside the title cycles **System, Light, Dark**, and the choice
+is remembered across sessions. System is the default and stays reachable, so one
+click on a laptop that happened to be in dark mode does not pin you to it. The
+board applies a stored choice before the first paint, because a page that reloads
+itself whenever the queue moves would otherwise flash the other theme each time.
+
+It is one HTML file with no external requests: no CDN, no fonts, no analytics.
+Small inline scripts keep the open cards, the folded sections and the scroll
+position across a reload, each wrapped in `try`/`catch` so the board still renders
+where storage throws.
+
+### How `--serve` keeps it current
+
+There is no server of its own. `tasks-board --serve`:
+
+1. renders the page once, and writes a `.stamp` file beside it holding the render's
+   epoch — the same number that is baked into the page;
+2. starts Python's standard static file server on the output directory, bound to
+   `127.0.0.1` only (`python3 -m http.server`, port 8787 unless you name one), and
+   stops it again on ctrl-c;
+3. checks the task file every few seconds — its mtime, or with `--ref` the blob sha
+   at that ref — and re-renders when it changed.
+
+The page does the rest. It re-reads the stamp on an interval and reloads itself when
+the stamp is newer than the render it is showing. Without a working Python, `--serve`
+falls back to `--watch` — re-render on change, no server — and says so.
+
+**The page verifies that it is current; it never asserts it.** It reports what it
+found: `live, checked 15:42:57` when the stamp matches, a reload when the stamp is
+newer, and `NOT refreshing` naming the reason when it cannot read the stamp at all.
+A one-shot render says `snapshot` and counts up how long ago it was written, because
+it makes no claim to be current.
+
+This replaced a meta refresh and an unconditional "live, refreshing every 5s" banner.
+That banner was wrong wherever the refresh could not reach the file — a `file://` page
+in an embedded viewer reloaded a snapshot of itself every five seconds and went on
+printing "live" while the queue moved underneath it. The failure was invisible for the
+worst possible reason: re-opening such a board *does* show fresh content, so every
+manual check confirmed the banner. A view that cannot know whether it is current must
+say that, not guess.
+
+**Prefer `--serve` over `--watch`.** A board opened as a `file://` URL cannot read
+the stamp written beside it, so it cannot tell whether it is still the current
+render. It will say so on the page rather than claim to be live — but it will not
+update.
+
+Gitignore the HTML and its `.stamp`. A committed snapshot is a second copy that ages.
+
+### Seeing what got finished, when finishing means deleting
+
+Deleting a task's whole block is the recommended way to finish one, and it leaves
+a queue of only live work with nothing to look back at. `--closed` adds a section
+built from the git log instead of from the file:
+
+```bash
+tasks-board --closed                       # the 20 most recent, from `Close <id>: ...`
+tasks-board --closed 50                    # more of them
+tasks-board --closed-match "Done "         # a different commit convention
+```
+
+It reads commits that touch the task file whose subject starts with the prefix,
+and shows the id, the text, the date and the sha, newest first. `--ref` applies
+here too: with it the section is the history of that ref.
+
+Closes that arrived on a branch and landed in a merge are included. That needs
+`--full-history`, because `git log -- <path>` prunes one side of a merge by
+default, silently omitting the branch-side closes *and* reporting a total that
+agrees with the omission.
+
+It only bites where the history actually contains merge commits. A repository
+that rebases or squashes its pull requests has a linear `main` and was never
+affected — which is most of them, and is worth knowing before you go looking for
+missing rows. The flag is there because linearity is usually a convention rather
+than a property: one merge made the other way and closes start disappearing, with
+a count that agrees.
+
+**It is off unless you ask for it, and that is the point.** `Close <id>:` is a
+convention some repositories have and this tool does not own. A board that assumed
+it would show an empty "Completed" section to everyone who spells it differently,
+with nothing to say why — so the prefix is configurable, the default is
+documented, and when nothing matches the section says which prefix it looked for
+rather than just showing nothing.
+
+**It never claims to be the whole list.** The heading reads `Closed recently (20
+of 63)` when it is truncated and `(25)` when it is not, with a line under it
+saying so. A section headed "Completed" that silently shows a third of them is a
+view asserting something it has not checked, which is the mistake the freshness
+banner already taught this tool once.
+
+**It cannot take the board down.** Outside a git repository, on a ref that does
+not resolve, or when `git log` refuses for any reason, the section stays and names
+the reason; the queue above it is rendered from the task file and is unaffected.
+
+## `tasks-ready`
+
+The board's answer as text, for the agents and for the command run before assigning
+work. On the example queue:
+
+```
+$ tasks-ready --file examples/TASKS.md --all
+queue: examples/TASKS.md — your working copy, not the remote
+
+READY (1):
+  P2  healthcheck-liveness           Health check reports healthy while the queue is stalled
+
+NOT READY:
+  P0  session-persistence            held by @alex
+  P1  shared-rate-limit              waits on session-persistence
+  P1  audit-write-path               file src/auth/middleware.py held by session-persistence
+  P2  metrics-endpoint               blocked: only the user can open the port on the load balancer
+  P2  session-eviction               file src/auth/session.py held by session-persistence
+
+6 tasks, 1 completed
+```
+
+The two always agree: the READY count is the board's `ready` tile, and each NOT
+READY reason is the subtitle on that task's card.
 
 ## Use
 
@@ -54,22 +213,17 @@ tasks-ready --ref origin/main    # the same, asked of the queue the fleet shares
 tasks-board                      # write ./tasks-board.html, once
 tasks-board --serve              # re-render on change AND serve it, so it stays current
 tasks-board --serve 9000         # the same on a port you choose (default 8787)
-tasks-board --watch              # re-render on change without serving (see the warning below)
+tasks-board --watch              # re-render on change without serving (see above)
 tasks-board --serve 8787 --out docs/board.html --title "Platform queue"
 tasks-board --serve --ref origin/main    # render the queue as the remote has it
 ```
-
-Then open the URL `--serve` prints — `http://127.0.0.1:8787/tasks-board.html`.
-Leave the tab open and it reloads itself whenever the task file changes.
-
-Both default to `./TASKS.md`, overridable with `--file` or `$TASKS_FILE`.
 
 **Use `--ref` when more than one machine writes the queue.** Both tools take it.
 Without it they read *your working copy*, so a claim somebody else pushed is
 invisible until you pull — and neither the page nor the listing can tell: each
 correctly reports what it was given, while what it was given is a stale file. It
-is the same mistake as the banner below, one level further out, and it is the more
-dangerous one, because work gets assigned from what these two show.
+is the same mistake as the freshness banner, one level further out, and it is the
+more dangerous one, because work gets assigned from what these two show.
 
 ```bash
 tasks-ready --ref origin/main                    # ask the queue the fleet shares
@@ -119,18 +273,30 @@ been told, and the people who most need the remote are the ones who have not.
 
 With `--ref`, `--file` is a path inside the repository rather than on disk, a
 remote ref is fetched before every check, and change detection is the file's blob
-sha instead of an mtime. The page then names what it rendered — *a view of
+sha instead of an mtime. The board then names what it rendered — *a view of
 `origin/main:TASKS.md`* — so a board of somebody else's branch cannot be mistaken
 for your own checkout. Without `--ref` nothing changes: it reads the working copy
 and says *a view of the task file*.
 
-**Prefer `--serve` over `--watch`.** A board opened as a `file://` URL cannot read
-the stamp written beside it, so it cannot tell whether it is still the current
-render. It will say so on the page rather than claim to be live — but it will not
-update. `--serve` needs `python3` on `PATH` and serves only on `127.0.0.1`; without
-one it falls back to `--watch` and says so.
+## Why a file and not a tracker
 
-Gitignore the HTML. A committed snapshot is a second copy that ages.
+This came out of running a coordinator plus worker agents against one repository,
+where the queue was a markdown file and claims were kept in an append-only event
+log with its own CLI. The log was removed after a night of measurement: **33 claims,
+and not one task was ever claimed by two agents.** It arbitrated nothing, because
+assignment settled ownership before any claim was written. What it did produce was
+ten distinct ways for a claim to fail while the terminal looked fine — a push
+reporting success having sent nothing, refusals exiting zero, one status word
+meaning two opposite things, state splitting between the log and the file in both
+directions, and a CI gate that turned out to be advisory so its green proved nothing.
+
+The lesson was not that tracking is bad. It was that **a second store drifts from
+the first, and then you have two answers and no way to say which is wrong.** The one
+capability worth keeping from the tooling was the query — "what is startable?" —
+which does not need a store at all. That is `tasks-ready`. `tasks-board` is the same
+answer for human eyes.
+
+So: generated, never authoritative.
 
 ## The three rules
 
@@ -149,6 +315,8 @@ Rule 3 is why this exists. "Nobody else owns this file" means *the whole file*, 
 just the tasks in progress — a file with no live claim can still be spoken for by a
 task nobody has picked up, and the collision then arrives at the worst moment. It is
 one `grep` per path, which is exactly the check a person skips and a script does not.
+On the board it is its own section, *Blocked by a file somebody holds*, and the card
+names the file and the task holding it.
 
 ## The format
 
@@ -194,118 +362,13 @@ Priorities are any `## P<n>`, from `P0` to `P9`, and `P0` sorts first.
 
 **Two ways to finish a task, and they mean the same thing.** Delete the block, or
 tick its box to `- [x]`. Deleting is the default and the reason there is no state
-to keep in sync — history lives in `git log`. Ticking keeps the block visible at
-the bottom of the board, which is worth it when the next person needs to see that
-something was done rather than never planned. Either way a done task stops
-counting: it holds none of its `**Files**`, and a `**Blocked by**` naming it is
-satisfied. That has to hold both ways round, or ticking a box would be worse than
-deleting the block — the task would go on blocking its dependents with nothing
-saying why.
-
-Try it:
-
-```bash
-tasks-ready --file examples/TASKS.md --all
-tasks-board --file examples/TASKS.md --out /tmp/board.html --title "Example queue"
-```
-
-## The board
-
-Counts by state, a stacked bar per priority, and one card per task. Clicking a card
-expands it to the full `Details`, `Files`, `Acceptance` and `Notes`, with backticks
-and bold rendered — the whole block a worker would read, without opening the file.
-
-Sections run **In progress, Ready to start, contested, Blocked, Completed**. In
-progress is first because the coordinator's first question is who is on what, and
-completed is last because it is the only section nobody acts on. Clicking a section
-heading folds that section's task list away, and clicking again brings it back —
-which is how you get a long queue down to the part you are working on. It does not
-touch the cards themselves: expanding a card is what shows its `Details` and
-`Acceptance`, and one gesture cannot sensibly mean both. Which sections you folded
-survives a reload, keyed by section rather than by position, so a task moving from
-ready to held does not hand your folded state to a different section.
-
-Cards are numbered down the page. That is only a way to say "look at 7" out loud —
-the numbers shift as tasks change state, and `**ID**` is the handle that does not.
-The counter covers the sections read from the task file; **closed rows are not
-numbered**, because they come from the log and already carry an id and a sha that
-do not move. A number there would have been an index into a historical record
-that re-counted itself whenever an unrelated live task was finished.
-
-Completed tasks are left out of the four counts and the priority bars. Those exist
-to answer what to do next, and a finished task is not a candidate; a "done" tile
-would only ever grow.
-
-### Seeing what got finished, when finishing means deleting
-
-Deleting a task's whole block is the recommended way to finish one, and it leaves
-a queue of only live work with nothing to look back at. `--closed` adds a section
-built from the git log instead of from the file:
-
-```bash
-tasks-board --closed                       # the 20 most recent, from `Close <id>: ...`
-tasks-board --closed 50                    # more of them
-tasks-board --closed-match "Done "         # a different commit convention
-```
-
-It reads commits that touch the task file whose subject starts with the prefix,
-and shows the id, the text, the date and the sha, newest first. `--ref` applies
-here too: with it the section is the history of that ref.
-
-Closes that arrived on a branch and landed in a merge are included. That needs
-`--full-history`, because `git log -- <path>` prunes one side of a merge by
-default, silently omitting the branch-side closes *and* reporting a total that
-agrees with the omission.
-
-It only bites where the history actually contains merge commits. A repository
-that rebases or squashes its pull requests has a linear `main` and was never
-affected — which is most of them, and is worth knowing before you go looking for
-missing rows. The flag is there because linearity is usually a convention rather
-than a property: one merge made the other way and closes start disappearing, with
-a count that agrees.
-
-**It is off unless you ask for it, and that is the point.** `Close <id>:` is a
-convention some repositories have and this tool does not own. A board that assumed
-it would show an empty "Completed" section to everyone who spells it differently,
-with nothing to say why — so the prefix is configurable, the default is
-documented, and when nothing matches the section says which prefix it looked for
-rather than just showing nothing.
-
-**It never claims to be the whole list.** The heading reads `Closed recently (20
-of 63)` when it is truncated and `(25)` when it is not, with a line under it
-saying so. A section headed "Completed" that silently shows a third of them is a
-view asserting something it has not checked, which is the mistake the freshness
-banner already taught this tool once.
-
-**It cannot take the board down.** Outside a git repository, on a ref that does
-not resolve, or when `git log` refuses for any reason, the section stays and names
-the reason; the queue above it is rendered from the task file and is unaffected.
-
-The theme button beside the title cycles **System, Light, Dark**, and the choice
-is remembered across sessions. System is the default and stays reachable, so one
-click on a laptop that happened to be in dark mode does not pin you to it. The
-board applies a stored choice before the first paint, because a page that reloads
-itself whenever the queue moves would otherwise flash the other theme each time.
-
-It is one HTML file with no external requests: no CDN, no fonts, no analytics.
-It works at phone width. Small inline scripts keep the open cards, the folded
-sections and the scroll position across a reload, each wrapped in `try`/`catch` so
-the board still renders where storage throws.
-
-**The page verifies that it is current; it never asserts it.** Each render writes its
-epoch to a `.stamp` file beside the HTML and bakes the same number into the page. The
-page re-reads that stamp on an interval and reports what it found: `live, checked
-15:42:57` when it matches, a reload when the stamp is newer, and `NOT refreshing`
-naming the reason when it cannot read it at all. A one-shot render says `snapshot`
-and counts up how long ago it was written, because it makes no claim to be current.
-
-This replaced a meta refresh and an unconditional "live, refreshing every 5s" banner.
-That banner was wrong wherever the refresh could not reach the file — a `file://` page
-in an embedded viewer reloaded a snapshot of itself every five seconds and went on
-printing "live" while the queue moved underneath it. The failure was invisible for the
-worst possible reason: re-opening such a board *does* show fresh content, so every
-manual check confirmed the banner. A view that cannot know whether it is current must
-say that, not guess.
+to keep in sync — history lives in `git log`, and `--closed` puts it back on the
+board. Ticking keeps the block visible at the bottom of the board, which is worth it
+when the next person needs to see that something was done rather than never
+planned. Either way a done task stops counting: it holds none of its `**Files**`,
+and a `**Blocked by**` naming it is satisfied. That has to hold both ways round, or
+ticking a box would be worse than deleting the block — the task would go on blocking
+its dependents with nothing saying why.
 
 ## Keeping the two in step
 
@@ -323,6 +386,8 @@ in the main checkout, which claims no tasks and writes no feature code; one or m
 reviews every PR against the task's `**Acceptance**` before merging, and keeps the
 queue and the protocol document current. Workers build, push back when the
 coordinator is wrong, and report findings into the queue rather than into chat.
+The board sits in the coordinator's sidebar, served from `--ref origin/main`, so it
+shows the queue the workers see rather than the coordinator's own checkout.
 
 Claiming is `(@actor)` on the checkbox line, committed alone and pushed before the
 work starts. Finishing is removing the whole block — history lives in `git log`, not
@@ -394,6 +459,5 @@ the next reader *what to re-derive* over a number that will be stale, and re-rea
 as someone who has not had the conversation.
 
 ## Licence
-
 
 MIT. See [LICENSE](LICENSE).

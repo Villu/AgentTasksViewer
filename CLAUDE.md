@@ -16,6 +16,9 @@ of them. No build, no package manager, no dependencies beyond `bash` and `awk`.
 `examples/TASKS.md` is the fixture: six live tasks covering all four live states,
 plus one `- [x]` task that a live task depends on.
 
+`docs/` holds the README's three screenshots and nothing else — see "Screenshots"
+below. There is no committed HTML anywhere: the board is generated on every run.
+
 ## Commands
 
 ```bash
@@ -338,3 +341,30 @@ Microsoft Store stub, which exits 49 without being python.
 - The README is the user-facing document and carries the design argument. If a
   flag, field or state changes, the README's flag list, field table and
   "three rules" section change with it.
+- `tasks-board` and `tasks-ready` are committed **100755**, so a fresh clone runs
+  `./tasks-board` without a `chmod` (they were 100644 until the README rewrite;
+  `core.filemode` is false on the Windows checkout, so set modes with
+  `git update-index --chmod=+x`, not `chmod`). Consumers must still not depend on
+  the mode — trader runs its vendored copies through `bash` on purpose.
+
+## Screenshots
+
+`docs/` holds three PNGs embedded by the README, all of one **made-up** queue (a
+week of fictional Lytta app work, workers `@worker-1`/`@worker-2`) — not
+`examples/TASKS.md`, and not any real repo's queue:
+
+| file | what |
+|---|---|
+| `board-in-sidebar.png` | the hero: a mock Claude Code window — the terminal text is hand-written HTML, the right pane is a real dark-theme render, top 708 px |
+| `board-light.png` | light theme, top of the page |
+| `board-dark-open-card.png` | dark theme, scrolled to the contested section, its card opened |
+
+All three are the board rendered at **400 CSS px wide** — the sidebar width it is
+mostly read at — captured with Playwright at device scale 2.5 (the hero at 2). The
+"Closed recently" rows came from a throwaway git history with `Close <id>:`
+commits, so rendering the queue file alone will not reproduce that section.
+
+They are illustrations of the tool, not a view of a queue, so they do not break
+the never-commit-generated-HTML rule. **They do go stale**: when the board's layout,
+colours or section names change, retake them, and keep the README captions true to
+what the images show.
